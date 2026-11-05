@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace DotKtx.Experimental.LspSupport;
+namespace DotKtX.Experimental.LspSupport;
 
 internal sealed record ProjectionResult(
     IReadOnlyDictionary<string, string> Files,

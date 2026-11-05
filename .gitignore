@@ -1,7 +1,6 @@
 artifacts/
-# Upstream JetBrains Kotlin LSP checkout, kept beside this repository for investigation only.
-# It is a separate git repository and must never become a commit here.
-kotlin-lsp/
+# Optional reference clones are independent repositories.
+upstream/
 bin/
 obj/
 .dotkt/

@@ -9,7 +9,7 @@ using JvmType = DotKt.Jvm.Metadata.Type;
 using JvmTypeParameter = DotKt.Jvm.Metadata.TypeParameter;
 using JvmValueParameter = DotKt.Jvm.Metadata.ValueParameter;
 
-namespace DotKtx.Experimental.LspSupport;
+namespace DotKtX.Experimental.LspSupport;
 
 /// <summary>The payload of one <c>kotlin.Metadata</c> annotation.</summary>
 internal sealed record KotlinMetadataAnnotation(

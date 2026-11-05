@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Text;
 
-namespace DotKtx.Experimental.LspSupport;
+namespace DotKtX.Experimental.LspSupport;
 
 internal sealed record JavaStubProjection(
     byte[] Jar,
@@ -193,7 +193,7 @@ internal static class KlibJavaStubProjector
         {
             AddEntry("META-INF/MANIFEST.MF", Encoding.UTF8.GetBytes(
                 "Manifest-Version: 1.0\r\n" +
-                "Created-By: DotKtx.Experimental.LspSupport\r\n" +
+                "Created-By: DotKtX.Experimental.LspSupport\r\n" +
                 "DotKt-Analysis-Only: true\r\n\r\n"));
             if (moduleMapping is not null)
                 AddEntry($"META-INF/{KotlinMetadataWriter.ModuleName}.kotlin_module", moduleMapping);

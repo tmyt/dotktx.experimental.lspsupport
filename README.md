@@ -1,4 +1,4 @@
-# DotKtx.Experimental.LspSupport
+# DotKtX.Experimental.LspSupport
 
 Experimental completion support for editing [DotKt](https://github.com/tmyt/dotkt)
 projects with JetBrains' Kotlin language server.
@@ -26,14 +26,14 @@ Add the package as a private, build-only dependency:
 ```xml
 <ItemGroup>
   <PackageReference
-    Include="DotKtx.Experimental.LspSupport"
-    Version="0.9.3"
+    Include="DotKtX.Experimental.LspSupport"
+    Version="0.9.4"
     PrivateAssets="all"
     IncludeAssets="build" />
 </ItemGroup>
 ```
 
-This package targets DotKt SDK `0.9.14`. LspSupport versions are released
+This package targets DotKt SDK `0.9.20`. LspSupport versions are released
 independently of the compiler version.
 
 Add the generated root model to `.gitignore`:
@@ -74,8 +74,8 @@ package.
 The only analysis archive this package ships is `kotlin-builtins.jar`, which carries the
 `*.kotlin_builtins` resources describing Kotlin's core classifiers - `Any`, `Int`,
 `List` and the rest. The JVM maps these classifiers onto `java.lang` types and
-primitives. The archive also includes exactly one ABI class, `kotlin/Unit.class`:
-the JVM analyzer needs it when `Unit` appears in a callback's type arguments.
+primitives. The archive also includes `kotlin/Unit.class` and `kotlin/Function.class`:
+the JVM analyzer needs Unit in callback type arguments and Function as the superclass of FunctionN.
 No JVM-only stdlib functions are included. Every other
 declaration is generated per project from DotKt's KLIBs without invoking `javac`.
 
@@ -172,16 +172,87 @@ blocks in newer LSP hosts, where the language feature was split and renamed.
 
 ## Development
 
+This is an original C# MSBuild integration tool, rather than a port of a Kotlin MPP
+library. It follows the shared porting layout with a `.csproj` using
+`Microsoft.NET.Sdk` and `OutputType=Exe`; `commonMain`, `clrMain`, `DotKtCommon`
+and the MPP SDK do not apply. The Kotlin projects under `tests/` are consumers and
+fixtures built with `DotKt.Sdk`, pinned to `0.9.20` in `global.json`. The toolchain
+and CLR standard library use DotKt `0.9.20` / Kotlin `2.4.21`.
+
+```text
+src/DotKtX.Experimental.LspSupport/
+  DotKtX.Experimental.LspSupport.csproj
+  *.cs, *.proto                     Generator and metadata schemas
+  packaging/
+    DotKtX.Experimental.LspSupport.nuspec
+    build/                          Consumer MSBuild props and targets
+tests/
+  Smoke/                            Executable consumer and LSP checks
+  ReceiverFixture/                  Receiver and suspend callback library
+scripts/                            Build, verification and packaging
+docs/                               Implementation notes
+tools/kotlin-metadata-reference/    Development-only metadata probes
+upstream/                           Optional, ignored reference clones
+artifacts/
+  bin/<project>/<configuration>/<tfm>/
+  obj/<project>/
+  packages/
+  verification/                     Logs and actual stdout
+```
+
+Prerequisites: .NET 10 SDK, a JDK providing `java`, `jar` and `javap`, Node.js,
+and `unzip`. NuGet restores packages from the DotKt feed and nuget.org.
+All scripts can be called from any working directory:
+
 ```bash
-./verify.sh
+bash scripts/build.sh
+bash scripts/verify.sh
+bash scripts/pack.sh
 node tests/Smoke/verify-lsp.mjs
 ```
 
-This packs the NuGet package, restores the smoke project against DotKt 0.9.14,
-and verifies that an ordinary `dotnet build` generated `workspace.json`, the
-analysis libraries, and a `System.Text.StringBuilder` completion declaration.
+`build.sh` builds the generator. `pack.sh` creates
+`artifacts/packages/DotKtX.Experimental.LspSupport.0.9.4.nupkg`, including its
+runtime dependencies, MSBuild integration, `LICENSE.txt` and `NOTICE.txt`.
+`verify.sh` packs that package, builds the smoke consumer through a
+`PackageReference`, runs it and compares stdout with `tests/Smoke/expected.txt`.
+It also checks generated workspaces, JAR structure, metadata accounting, receiver
+and suspend callback typing, and the plain-Java fallback. Build logs and actual
+stdout are saved under `artifacts/verification/`. Test projects are not packable.
+
+Additional arguments are forwarded to `dotnet build` or `dotnet pack`.
+For verification, use MSBuild options shared by those commands, for example:
+
+```bash
+bash scripts/verify.sh -p:RestoreAdditionalProjectSources=/path/to/local/feed
+bash scripts/pack.sh -p:RestoreAdditionalProjectSources=/path/to/local/feed
+```
+
 The Node verifier additionally starts an installed JetBrains Kotlin language
 server and checks CLR-reference completion, `kotlin.clr` completion, member
 completion, and go-to-definition end to end. It also checks receiver and suspend
 callbacks, their error diagnostics and return type inference, and confirms that
-ordinary callbacks still reject suspend calls.
+ordinary callbacks still reject suspend calls. Set `KOTLIN_LSP_SERVER` to a
+standalone server executable if the VS Code extension is not installed.
+
+The project, output assembly and NuGet ID use `DotKtX.Experimental.LspSupport`.
+Version `0.9.4` distinguishes the renamed assembly from `0.9.3`, whose ID used
+`DotKtx`; NuGet treats these IDs as the same package. Existing MSBuild property
+names (`DotKtxExperimentalLsp*`) and workspace ownership markers remain compatible.
+No sibling repository or optional reference clone is required for building or packing.
+
+Validation on 2026-11-05: Release build, package creation, the full verification
+script and all real LSP assertions passed (.NET SDK `10.0.401`, DotKt `0.9.20`,
+JetBrains Kotlin VS Code extension `0.0.86`). The DLL assembly name, NuGet ID,
+bundled runtime dependencies and license/notice files were checked. Calling the
+build script from outside the repository with additional arguments also passed.
+
+## Sources and licensing
+
+The integration code is licensed under Apache-2.0; see `LICENSE.txt`.
+The Kotlin metadata schemas and the builtins archive originate from
+[JetBrains Kotlin](https://github.com/JetBrains/kotlin), using the Kotlin `2.4.21`
+compiler distribution in `DotKt.Toolchain 0.9.20` as the format reference.
+`NOTICE.txt` records the third-party attribution. The optional JetBrains
+[kotlin-lsp](https://github.com/Kotlin/kotlin-lsp) checkout under
+`upstream/kotlin-lsp/` is for investigation only and is not a build input.

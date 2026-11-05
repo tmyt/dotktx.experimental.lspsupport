@@ -8,14 +8,14 @@ import { dirname, join, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 const projectDir = resolve(dirname(fileURLToPath(import.meta.url)))
-const sourcePath = join(projectDir, "src", "Program.kt")
+const sourcePath = join(projectDir, "Program.kt")
 const sourceUri = pathToFileURL(sourcePath).href
-const projectionPath = join(projectDir, "src", "JavaProjection.kt")
+const projectionPath = join(projectDir, "JavaProjection.kt")
 const projectionUri = pathToFileURL(projectionPath).href
-const receiverPath = join(projectDir, "src", "ReceiverLambda.kt")
+const receiverPath = join(projectDir, "ReceiverLambda.kt")
 const receiverUri = pathToFileURL(receiverPath).href
 const receiverDocumentText = readFileSync(receiverPath, "utf8")
-const suspendPath = join(projectDir, "src", "SuspendLambda.kt")
+const suspendPath = join(projectDir, "SuspendLambda.kt")
 const suspendUri = pathToFileURL(suspendPath).href
 const suspendDocumentText = readFileSync(suspendPath, "utf8")
 const rootUri = pathToFileURL(projectDir).href
@@ -30,7 +30,7 @@ const baseAnalysisDocumentText = "import kotlin.clr.\n" + documentText
 const analysisDocumentText = baseAnalysisDocumentText
 const ownsSystemPath = !process.env.KOTLIN_LSP_SYSTEM_PATH
 const systemPath = process.env.KOTLIN_LSP_SYSTEM_PATH ??
-    join(projectDir, ".dotkt", `lsp-verifier-${process.pid}`)
+    join(projectDir, "..", "..", "artifacts", "verification", `lsp-verifier-${process.pid}`)
 const analyzerIndexDir = join(systemPath, "index")
 
 function findServer() {
@@ -140,7 +140,7 @@ function handle(message) {
                 reply(message.id, (message.params?.items ?? []).map(() => null))
                 break
             case "workspace/workspaceFolders":
-                reply(message.id, [{ uri: rootUri, name: "DotKtx.Experimental.LspSupport.Smoke" }])
+                reply(message.id, [{ uri: rootUri, name: "DotKtX.Experimental.LspSupport.Smoke" }])
                 break
             case "window/workDoneProgress/create":
             case "client/registerCapability":
@@ -251,10 +251,10 @@ const loadAtStart = loadavg()[0]
 try {
     const initializeResult = await request("initialize", {
         processId: process.pid,
-        clientInfo: { name: "DotKtx.Experimental.LspSupport verifier", version: "1" },
+        clientInfo: { name: "DotKtX.Experimental.LspSupport verifier", version: "1" },
         rootPath: projectDir,
         rootUri,
-        workspaceFolders: [{ uri: rootUri, name: "DotKtx.Experimental.LspSupport.Smoke" }],
+        workspaceFolders: [{ uri: rootUri, name: "DotKtX.Experimental.LspSupport.Smoke" }],
         initializationOptions: {
             defaultSdk: null,
             buildTools: { [rootUri]: "json" },

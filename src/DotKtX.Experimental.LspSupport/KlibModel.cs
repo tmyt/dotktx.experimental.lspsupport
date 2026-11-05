@@ -1,4 +1,4 @@
-namespace DotKtx.Experimental.LspSupport;
+namespace DotKtX.Experimental.LspSupport;
 
 // A projection-independent view of the DotKt frontend KLIBs. Both the Kotlin source emitter and the
 // Java classfile emitter read this model instead of the protobuf tables, so a KLIB is parsed once and

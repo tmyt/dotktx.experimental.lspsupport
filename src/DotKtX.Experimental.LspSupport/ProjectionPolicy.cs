@@ -1,4 +1,4 @@
-namespace DotKtx.Experimental.LspSupport;
+namespace DotKtX.Experimental.LspSupport;
 
 /// <summary>
 /// Chooses which KLIB declarations become analysis-only JVM classfiles instead of Kotlin source stubs.

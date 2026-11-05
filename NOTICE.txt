@@ -2,11 +2,13 @@
 
 ## Kotlin builtins
 
-`DotKtx.Experimental.LspSupport` redistributes `kotlin-builtins.jar`, which contains
+`DotKtX.Experimental.LspSupport` redistributes `kotlin-builtins.jar`, which contains
 the `*.kotlin_builtins` metadata resources taken from the Kotlin standard library.
 They describe Kotlin's core classifiers - `Any`, `Int`, `collections.List` and the
 rest - which a Kotlin analyzer reads from resources rather than from classfiles.
-No Kotlin implementation code is redistributed.
+The archive also contains kotlin/Unit.class and kotlin/Function.class, the
+minimal JVM ABI classes required by the analyzer for callback types.
+The complete JVM standard library is not redistributed.
 
 Kotlin is Copyright 2010-2026 JetBrains s.r.o. and Kotlin Programming Language
 contributors and is licensed under the Apache License 2.0.

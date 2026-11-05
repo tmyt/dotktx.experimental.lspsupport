@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 
-namespace DotKtx.Experimental.LspSupport;
+namespace DotKtX.Experimental.LspSupport;
 
 /// <summary>
 /// Records what the projection kept, approximated and dropped. Silence is the dangerous failure mode
@@ -97,7 +97,7 @@ internal sealed class ProjectionReport
     public string Render(string projectName, ProjectionPolicy policy)
     {
         var builder = new StringBuilder();
-        builder.AppendLine("# DotKtx.Experimental.LspSupport projection report");
+        builder.AppendLine("# DotKtX.Experimental.LspSupport projection report");
         builder.AppendLine();
         builder.Append("project: ").AppendLine(projectName);
         builder.Append("java projection policy: ").AppendLine(policy.Describe());

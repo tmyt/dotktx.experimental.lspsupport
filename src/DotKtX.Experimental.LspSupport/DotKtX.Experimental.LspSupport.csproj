@@ -1,10 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
-    <AssemblyName>DotKtx.Experimental.LspSupport</AssemblyName>
-    <RootNamespace>DotKtx.Experimental.LspSupport</RootNamespace>
-    <IsPackable>false</IsPackable>
+    <AssemblyName>DotKtX.Experimental.LspSupport</AssemblyName>
+    <RootNamespace>DotKtX.Experimental.LspSupport</RootNamespace>
+    <IsPackable>true</IsPackable>
+    <PackageId>DotKtX.Experimental.LspSupport</PackageId>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <NuspecFile>packaging/DotKtX.Experimental.LspSupport.nuspec</NuspecFile>
+    <NuspecBasePath>$(MSBuildProjectDirectory)/packaging</NuspecBasePath>
+    <NoWarn>$(NoWarn);NU5100;NU5128</NoWarn>
     <UseAppHost>false</UseAppHost>
   </PropertyGroup>
   <ItemGroup>
@@ -60,4 +64,9 @@
                   Overwrite="true" />
   </Target>
 
+  <Target Name="SetLspNuspecProperties" BeforeTargets="GenerateNuspec">
+    <PropertyGroup>
+      <NuspecProperties>version=$(PackageVersion);toolOutput=$(TargetDir)</NuspecProperties>
+    </PropertyGroup>
+  </Target>
 </Project>

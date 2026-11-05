@@ -1,15 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_dir="$(cd "$(dirname "$0")" && pwd)"
-version_prefix="$(sed -n 's:.*<VersionPrefix>\(.*\)</VersionPrefix>.*:\1:p' "$repo_dir/Directory.Build.props")"
-version_suffix="$(sed -n 's:.*<VersionSuffix>\(.*\)</VersionSuffix>.*:\1:p' "$repo_dir/Directory.Build.props")"
-package_version="$version_prefix"
-test -z "$version_suffix" || package_version="$version_prefix-$version_suffix"
+repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "$repo_dir"
+verification_dir="$repo_dir/artifacts/verification"
+mkdir -p "$verification_dir"
+if ! bash "$repo_dir/scripts/pack.sh" "$@" >"$verification_dir/pack.log" 2>&1; then
+  cat "$verification_dir/pack.log"
+  exit 1
+fi
+cat "$verification_dir/pack.log"
 
-"$repo_dir/build.sh"
+# Resolve effective paths and version using the same MSBuild properties as the build.
+properties="$(dotnet msbuild "$repo_dir/src/DotKtX.Experimental.LspSupport/DotKtX.Experimental.LspSupport.csproj" \
+  -nologo -p:Configuration=Release "$@" -getProperty:TargetDir,PackageVersion,PackageOutputPath,NuGetPackageRoot)"
+property() {
+  node -e 'console.log(JSON.parse(process.argv[1]).Properties[process.argv[2]])' "$properties" "$1"
+}
+package_version="$(property PackageVersion)"
+tool_out="$(property TargetDir)"
+package_out="$(property PackageOutputPath)"
+package_cache="$(property NuGetPackageRoot)"
 
-tool_out="$repo_dir/src/DotKtx.Experimental.LspSupport/bin/Release/net10.0"
 # Only the Kotlin core classifiers still come from the JVM distribution; nothing else may ship.
 test -f "$tool_out/kotlin-builtins.jar"
 test ! -f "$tool_out/kotlin-stdlib.jar"
@@ -28,17 +40,40 @@ if jar tf "$tool_out/kotlin-builtins.jar" | grep '\.class$' | grep -Evq '^kotlin
   exit 1
 fi
 
-nupkg="$repo_dir/artifacts/DotKtx.Experimental.LspSupport.$package_version.nupkg"
+nupkg="$package_out/DotKtX.Experimental.LspSupport.$package_version.nupkg"
 unzip -Z1 "$nupkg" | grep -qx 'tools/net10.0/any/kotlin-builtins.jar'
-unzip -Z1 "$nupkg" | grep -qvx 'tools/net10.0/any/kotlin-stdlib.jar'
+if unzip -Z1 "$nupkg" | grep -Fxq 'tools/net10.0/any/kotlin-stdlib.jar'; then
+  echo "The full JVM standard library must not ship" >&2
+  exit 1
+fi
+unzip -Z1 "$nupkg" | grep -Fxq 'tools/net10.0/any/DotKtX.Experimental.LspSupport.dll'
+unzip -Z1 "$nupkg" | grep -Fxq 'LICENSE.txt'
+unzip -Z1 "$nupkg" | grep -Fxq 'NOTICE.txt'
+unzip -p "$nupkg" DotKtX.Experimental.LspSupport.nuspec >"$verification_dir/package.nuspec"
+node -e '
+  const xml = require("fs").readFileSync(process.argv[1], "utf8")
+  if (!/<id>DotKtX\.Experimental\.LspSupport<\/id>/.test(xml)) process.exit(1)
+  if (/<dependency\s/.test(xml)) process.exit(1)
+' "$verification_dir/package.nuspec"
 
 # NuGet treats one package ID/version as immutable. This repository intentionally rebuilds the same
 # experimental version while developing, so remove its isolated cached extraction before restore;
 # otherwise a fresh nupkg can be silently tested through yesterday's targets and tools.
-rm -rf "$repo_dir/artifacts/.packages/dotktx.experimental.lspsupport/$package_version"
+rm -rf "$package_cache/dotktx.experimental.lspsupport/$package_version"
 rm -rf "$repo_dir/tests/Smoke/.dotkt" "$repo_dir/tests/Smoke/workspace.json"
-dotnet restore "$repo_dir/tests/Smoke/Smoke.ktproj" --force
-dotnet build "$repo_dir/tests/Smoke/Smoke.ktproj" -c Release --no-restore
+if ! dotnet build "$repo_dir/tests/Smoke/Smoke.ktproj" -c Release --force "$@" >"$verification_dir/Smoke.build.log" 2>&1; then
+  cat "$verification_dir/Smoke.build.log"
+  exit 1
+fi
+cat "$verification_dir/Smoke.build.log"
+smoke_out="$(dotnet msbuild "$repo_dir/tests/Smoke/Smoke.ktproj" -nologo -p:Configuration=Release "$@" -getProperty:TargetPath)"
+dotnet "$smoke_out" >"$verification_dir/Smoke.actual.txt"
+diff -u "$repo_dir/tests/Smoke/expected.txt" "$verification_dir/Smoke.actual.txt"
+# The tool's dependency manifest must use the normalized assembly name.
+node -e '
+  const libraries = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).libraries
+  if (!Object.keys(libraries).some(k => k.startsWith("DotKtX.Experimental.LspSupport/"))) process.exit(1)
+' "$tool_out/DotKtX.Experimental.LspSupport.deps.json"
 
 test -f "$repo_dir/tests/Smoke/workspace.json"
 test -f "$repo_dir/tests/Smoke/.dotkt/lsp/.stamp"
@@ -152,13 +187,13 @@ rg -q '^- metadata\.type\.extension-function: [1-9]' "$report"
 rg -q '^- klib\.typeref\.suspend-function: [1-9]' "$report"
 rg -q '^- metadata\.type\.suspend-function: [1-9]' "$report"
 dotkt_version="$(sed -n 's:.*<DotKtVersion>\(.*\)</DotKtVersion>.*:\1:p' "$repo_dir/Directory.Build.props")"
-compiler_lib="$repo_dir/artifacts/.packages/dotkt.toolchain/$dotkt_version/tools/kotc/lib"
+compiler_lib="$package_cache/dotkt.toolchain/$dotkt_version/tools/kotc/lib"
 # Use exactly the shipped analysis classpath: the full JVM stdlib would mask missing ABI classes.
 java -cp "$compiler_lib/*" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler \
   -no-stdlib -classpath "$tool_out/kotlin-builtins.jar:$java_stub_jar" \
   -Xcompanion-blocks-and-extensions \
-  -d "$repo_dir/artifacts/verify-receiver-consumer" \
-  "$repo_dir/tests/Smoke/src/ReceiverLambda.kt" "$repo_dir/tests/Smoke/src/SuspendLambda.kt"
+  -d "$verification_dir/receiver-consumer" \
+  "$repo_dir/tests/Smoke/ReceiverLambda.kt" "$repo_dir/tests/Smoke/SuspendLambda.kt"
 # Overloads that erase to one JVM descriptor are kept by mangling the JVM name, not by dropping them.
 rg -q '^- member\.mangled\.method: [1-9]' "$report"
 # Top-level CLR declarations have no owning class, so they only exist for the analyzer as file facades
@@ -172,7 +207,7 @@ javap -classpath "$java_stub_jar" System.Linq.System_Linq_ParallelKt | grep -q '
 # declared and both are emitted, in different scopes. Counted so the shape stays visible.
 rg -q '^- extension-method\.both-call-forms: [1-9]' "$report"
 if rg -q '^## upstream gaps$' "$report"; then
-  echo "DotKt 0.9.14 left an upstream KLIB gap:" >&2
+  echo "DotKt $dotkt_version left an upstream KLIB gap:" >&2
   sed -n '/^## upstream gaps$/,/^## /p' "$report" >&2
   exit 1
 fi
@@ -218,13 +253,13 @@ node -e '
 ' "$repo_dir/tests/Smoke/workspace.json"
 
 # The plain-Java fallback is the escape hatch if a metadata bug ever ships, so it has to keep working.
-fallback_out="$repo_dir/artifacts/verify-no-metadata"
+fallback_out="$verification_dir/no-metadata"
 rm -rf "$fallback_out"
 mkdir -p "$fallback_out/project"
-dotnet "$repo_dir/src/DotKtx.Experimental.LspSupport/bin/Release/net10.0/DotKtx.Experimental.LspSupport.dll" \
+dotnet "$tool_out/DotKtX.Experimental.LspSupport.dll" \
   generate --project "$fallback_out/project" --name fallback --output "$fallback_out/model" \
-  --sources "$repo_dir/tests/Smoke/obj/dotkt-lsp-sources.rsp" \
-  --klibs "$repo_dir/tests/Smoke/obj/dotkt-lsp-klibs.rsp" \
+  --sources "$repo_dir/artifacts/obj/Smoke/dotkt-lsp-sources.rsp" \
+  --klibs "$repo_dir/artifacts/obj/Smoke/dotkt-lsp-klibs.rsp" \
   --java-projection 'all;no-metadata' > /dev/null
 fallback_jar="$fallback_out/model/libraries/dotkt-klib-java-stubs.jar"
 rg --no-ignore -q '@kotlin\.ExtensionFunctionType.*receiverfixture\.TextBlock' "$fallback_out/model/stubs"
@@ -236,4 +271,4 @@ javap -classpath "$fallback_jar" System.Text.StringBuilder | grep -q 'public nat
 rg -q '^- member\.dropped\.erasure-clash\.method: [1-9]' "$fallback_out/model/projection-report.md"
 rm -rf "$fallback_out"
 
-echo "DotKtx.Experimental.LspSupport: package and MSBuild generation verified"
+echo "DotKtX.Experimental.LspSupport: package and MSBuild generation verified"

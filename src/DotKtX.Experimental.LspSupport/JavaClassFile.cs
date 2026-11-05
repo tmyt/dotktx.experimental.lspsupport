@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 
-namespace DotKtx.Experimental.LspSupport;
+namespace DotKtX.Experimental.LspSupport;
 
 /// <summary>
 /// Writes one Java 8 classfile per projected KLIB declaration. Nothing here is meant to run: instance

@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <_DotKtxExperimentalLspToolDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../tools/net10.0/any/'))</_DotKtxExperimentalLspToolDir>
-    <_DotKtxExperimentalLspTool>$(_DotKtxExperimentalLspToolDir)DotKtx.Experimental.LspSupport.dll</_DotKtxExperimentalLspTool>
+    <_DotKtxExperimentalLspTool>$(_DotKtxExperimentalLspToolDir)DotKtX.Experimental.LspSupport.dll</_DotKtxExperimentalLspTool>
     <_DotKtxExperimentalLspKlibs>$(BaseIntermediateOutputPath)dotkt-lsp-klibs.rsp</_DotKtxExperimentalLspKlibs>
     <_DotKtxExperimentalLspSources>$(BaseIntermediateOutputPath)dotkt-lsp-sources.rsp</_DotKtxExperimentalLspSources>
     <!-- The policy is written to disk so that changing the property alone invalidates the projection;
@@ -47,7 +47,7 @@
     <PropertyGroup>
       <_DotKtxExperimentalLspJavaProjectionArgument Condition="'$(DotKtxExperimentalLspJavaProjection)' != ''"> --java-projection &quot;$(DotKtxExperimentalLspJavaProjection)&quot;</_DotKtxExperimentalLspJavaProjectionArgument>
     </PropertyGroup>
-    <Message Importance="high" Text="DotKtx.Experimental.LspSupport: generating analysis workspace from @(_DotKtxExperimentalLspKlib->Count()) KLIB(s)" />
+    <Message Importance="high" Text="DotKtX.Experimental.LspSupport: generating analysis workspace from @(_DotKtxExperimentalLspKlib->Count()) KLIB(s)" />
     <Exec Command="dotnet &quot;$(_DotKtxExperimentalLspTool)&quot; generate --project &quot;$(MSBuildProjectDirectory)&quot; --name &quot;$(MSBuildProjectName)&quot; --output &quot;$(DotKtxExperimentalLspRoot)&quot; --sources &quot;$(_DotKtxExperimentalLspSources)&quot; --klibs &quot;$(_DotKtxExperimentalLspKlibs)&quot; --builtins &quot;$(_DotKtxExperimentalLspBuiltins)&quot; --stdlib-klib &quot;@(_DotKtxExperimentalLspStdlibKlib)&quot;$(_DotKtxExperimentalLspJavaProjectionArgument)" />
   </Target>
 

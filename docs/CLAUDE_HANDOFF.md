@@ -1,8 +1,12 @@
-# DotKtx.Experimental.LspSupport 引継ぎ
+# DotKtX.Experimental.LspSupport 引継ぎ
 
-パッケージ: LspSupport 0.9.2（コンパイラとは独立した採番）
-対象: DotKt 0.9.14 / Kotlin 2.4.21
-最終更新: 2026-10-14 (第6版、suspend 関数型の投影を修正)
+パッケージ: LspSupport 0.9.4（コンパイラとは独立した採番）
+対象: DotKt 0.9.20 / Kotlin 2.4.21
+最終更新: 2026-11-05（レイアウト統一）
+
+レイアウト変更後のパッケージは 0.9.4。プロジェクト・DLL・NuGet ID は
+`DotKtX.Experimental.LspSupport`。SDK は 0.9.20 に更新。Kotlin は 2.4.21。
+生成物は `artifacts/bin`・`artifacts/obj`・`artifacts/packages`・`artifacts/verification` を参照する。
 
 0.9.2 では suspend 型フラグと Unit ABI の修正を取り込んだ。
 
@@ -92,28 +96,28 @@ workspace.json
 - `$(DotKtKotlinVersion)` に埋め込み Kotlin バージョン。
 - `_DotKt` 接頭辞と `$(DotKtToolchainDir)` 配下は private。
 
-`packaging/build/DotKtx.Experimental.LspSupport.targets` はこの公開契約だけを使っている。
+`src/DotKtX.Experimental.LspSupport/packaging/build/DotKtX.Experimental.LspSupport.targets` はこの公開契約だけを使っている。
 private 名（`@(_DotKtKlibReference)`、`DotKtGenerateReferenceKlibs` 等）への依存は無い。
 
 `$(DotKtStdlib)` の `kotlin-stdlib-clr-frontend.klib` も投影している。
 これにより JVM `kotlin-stdlib.jar` 近似と手書き overlay を**廃止した**。`kotlin.clr` は DotKt 自身の
 宣言から来るので、手動メンテは不要になった。
 
-JVM 側から持ってきているのは `*.kotlin_builtins` リソースと `kotlin/Unit.class` だけである。`kotlin.Any` / `Int` /
+JVM 側から持ってきているのは `*.kotlin_builtins` リソースと `kotlin/Unit.class`・`kotlin/Function.class` である。`kotlin.Any` / `Int` /
 `collections.List` などの中核 classifier は classfile ではなくこのリソースで供給され、JVM が
 `java.lang.*` と primitive へ写像する。プラットフォーム中立なので JVM 版をそのまま使い、
 同名の classfile は出さない（除外集合はリソースを実際に読んで決めるので、手書きリストが腐ることはない）。
 例外の `Unit.class` は callback の型引数に `Unit` が現れるときの JVM ABI 解決に必要。
-resources だけだと実 LSP が `MISSING_DEPENDENCY_CLASS` を出す。verify.sh は classfile を Unit 1つに
+resources だけだと実 LSP が `MISSING_DEPENDENCY_CLASS` を出す。scripts/verify.sh は classfile を Unit と Function の2つに
 制限し、consumer の型チェックも JVM stdlib 全体ではなく実際に同梱する archive で行う。
 
 ## 3. 主要ファイル
 
 MSBuild:
 
-- `packaging/build/DotKtx.Experimental.LspSupport.props`
+- `src/DotKtX.Experimental.LspSupport/packaging/build/DotKtX.Experimental.LspSupport.props`
   — enable flag、出力 root、`DotKtxExperimentalLspJavaProjection` policy property。
-- `packaging/build/DotKtx.Experimental.LspSupport.targets`
+- `src/DotKtX.Experimental.LspSupport/packaging/build/DotKtX.Experimental.LspSupport.targets`
   — 公開契約から入力を集め、response file 化し、generator を `KotlinCompile` 直前に incremental 実行。
   policy もファイル化してあるので property を変えるだけで incremental が正しく無効化される。
 
@@ -132,16 +136,16 @@ generator:
 - `ProjectionReport.cs` — 会計・counter・distribution・timing・upstream gap・representation limit。
 - `KlibSourceProjector.cs` — `no-metadata` fallback 専用。既定経路では 0 file。
 - `WorkspaceWriter.cs` — JAR・report・`workspace.json` を atomic 更新。
-（手書き overlay `src/DotKtx.Experimental.LspSupport.Overlay/` は 0.9.9 対応で削除した。
+（手書き overlay `src/DotKtX.Experimental.LspSupport.Overlay/` は 0.9.9 対応で削除した。
 `kotlin.clr` は CLR stdlib KLIB から来る。）
 
 検証:
 
-- `tests/Smoke/src/Program.kt`, `tests/Smoke/src/JavaProjection.kt` — 実際に DotKt でコンパイルされる smoke。
+- `tests/Smoke/Program.kt`, `tests/Smoke/JavaProjection.kt` — 実際に DotKt でコンパイルされる smoke。
 - `tests/Smoke/verify-lsp.mjs` — 実 LSP を stdio 起動する verifier（assertion 10 本 + 負荷付き時間計測）。
-- `verify.sh` — pack、isolated restore、DotKt build、JAR 構造検査、会計検査、fallback 経路検査。
+- `scripts/verify.sh` — pack、isolated restore、DotKt build、JAR 構造検査、会計検査、fallback 経路検査。
 - `tests/ReceiverFixture/` — 実 DotKt compiler で作る receiver 関数型の参照ライブラリ。
-  `tests/Smoke/src/ReceiverLambda.kt` を投影 JAR に対して Kotlin JVM compiler でも型チェックし、
+  `tests/Smoke/ReceiverLambda.kt` を投影 JAR に対して Kotlin JVM compiler でも型チェックし、
   LSP verifier が暗黙 receiver / 明示 `this` / 普通の `it` / generic 内 / nullable の補完を検査する。
 - `tools/kotlin-metadata-reference/` — metadata 形式を実物から導出・検証する開発用ツール（7章）。
 
@@ -166,7 +170,7 @@ Smoke project、参照 KLIB 167 本。
 builtin classifier 135 個は `input.builtin-class` に分離してある（classfile ではなく
 `*.kotlin_builtins` から供給されるため）。
 
-constructor の -179 は CLR attribute の overload（6.2）。**この表は verify.sh が検査する** —
+constructor の -179 は CLR attribute の overload（6.2）。**この表は scripts/verify.sh が検査する** —
 constructor 以外の差が 0 でなければ失敗し、constructor の差も報告済み overload 数と一致しなければ失敗する。
 
 注意: 入力側は reader が構築したモデルであって生 protobuf ではない。reader が読み取り時に潰すもの
@@ -306,7 +310,7 @@ report が自分で 2 種類に分類する。未分類のものは無い。
   で保持し、JVM metadata の `Type.flags` へ渡す。no-metadata source fallback は Continuation を
   外して論理的な suspend 関数型へ戻す。
   `klib.typeref.suspend-function` / `metadata.type.suspend-function` を計上する。
-  `tests/ReceiverFixture/SuspendFixture.kt` と `tests/Smoke/src/SuspendLambda.kt` で receiver / plain /
+  `tests/ReceiverFixture/SuspendFixture.kt` と `tests/Smoke/SuspendLambda.kt` で receiver / plain /
   nested / nullable を検証し、実 LSP の error diagnostics 0件と戻り値 Int の hover を確認する。
   通常 callback 内の suspend 呼び出しは引き続き拒否する negative control もある。
 
@@ -356,13 +360,13 @@ report が自分で 2 種類に分類する。未分類のものは無い。
   するなら 1 パッケージあたり複数の `.knm` fragment を 1 つへマージする必要がある
   （`kotlin` は 86、`kotlin.collections` は 59 fragment）。文字列表と修飾名表の索引振り直しを伴う。
 - 生成 JAR の名前が `dotkt-klib-java-stubs.jar` のままで、実態（metadata 付き単一 JAR）と合っていない。
-  改名は verify.sh / README / LSP verifier の assertion に波及するので未実施。
+  改名は scripts/verify.sh / README / LSP verifier の assertion に波及するので未実施。
 - 複数 project / 実プロジェクト規模での cold / warm 計測。現在の実測は smoke project のみ。
 
 ## 9. 検証方法
 
 ```bash
-bash verify.sh                      # pack, restore, DotKt build, JAR 構造・会計・fallback 検査
+bash scripts/verify.sh                      # pack, restore, DotKt build, JAR 構造・会計・fallback 検査
 node tests/Smoke/verify-lsp.mjs     # 実 JetBrains Kotlin LSP
 cat tests/Smoke/.dotkt/lsp/projection-report.md
 ```
@@ -379,7 +383,7 @@ dotnet build tests/Smoke/Smoke.ktproj -c Release \
 ### 9.1 index の置き場所に関する注意
 
 `/tmp` は tmpfs で、**LSP の RocksDB index が実際に埋め尽くして LSP が落ちた実績がある**。
-cold index 1 回で 400 MiB を超える。verifier は既定で `tests/Smoke/.dotkt/lsp-verifier-<pid>` を使い
+cold index 1 回で 400 MiB を超える。verifier は既定で `artifacts/verification/lsp-verifier-<pid>` を使い
 終了時に削除する。`KOTLIN_LSP_SYSTEM_PATH` を明示した場合は削除しないので、実ディスク側を指定し、
 測定後に必ず消すこと。
 
@@ -395,15 +399,15 @@ cold index 1 回で 400 MiB を超える。verifier は既定で `tests/Smoke/.d
   `DotKtVersion` / `DotKtKotlinVersion` とは別管理であり、更新時に自動的に揃えない。
   パッケージ0.9.14は過去にコンパイラ版へ揃えてしまった採番。ユーザーの指示により、
   次のリリースを0.9.1に戻して以降0.9.2、0.9.3と刻む。配布先はユーザー管理のDotKtフィード。
-- nested `./kotlin-lsp` を外側 repo へ誤って追加しない。
+- nested `./upstream/kotlin-lsp` を外側 repo へ誤って追加しない。
 - installed VS Code extension の JAR を直接変更した状態で結果を確定しない。
 
 ## 11. 引継ぎ直後に行う確認
 
 ```bash
 git status -sb
-dotnet build src/DotKtx.Experimental.LspSupport/DotKtx.Experimental.LspSupport.csproj -c Release -v:minimal
-bash verify.sh
+dotnet build src/DotKtX.Experimental.LspSupport/DotKtX.Experimental.LspSupport.csproj -c Release -v:minimal
+bash scripts/verify.sh
 node tests/Smoke/verify-lsp.mjs
 cat tests/Smoke/.dotkt/lsp/projection-report.md
 ```

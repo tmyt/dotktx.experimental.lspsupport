@@ -8,7 +8,7 @@ using ProtoType = DotKt.Klib.Metadata.Type;
 using ProtoTypeParameter = DotKt.Klib.Metadata.TypeParameter;
 using ProtoValueParameter = DotKt.Klib.Metadata.ValueParameter;
 
-namespace DotKtx.Experimental.LspSupport;
+namespace DotKtX.Experimental.LspSupport;
 
 /// <summary>Parses every referenced KLIB exactly once into the shared <see cref="KlibWorld"/> model.</summary>
 internal static class KlibReader

@@ -15,11 +15,12 @@ lands so the companion projection can be re-measured rather than assumed.
 
 ```bash
 repo=$(git rev-parse --show-toplevel)
-LIB="$repo/artifacts/.packages/dotkt.toolchain/0.9.14/tools/kotc/lib"
-CP="$LIB/kotlin-compiler-embeddable-2.4.21.jar:$LIB/kotlin-stdlib-2.4.21.jar:."
+LIB="$repo/artifacts/.packages/dotkt.toolchain/0.9.20/tools/kotc/lib"
+reference_out="$repo/artifacts/verification/kotlin-metadata-reference"
+CP="$LIB/kotlin-compiler-embeddable-2.4.21.jar:$LIB/kotlin-stdlib-2.4.21.jar:$reference_out"
 cd "$repo/tools/kotlin-metadata-reference"
-mkdir -p out   # gitignored scratch for compiled classes and dumps
-javac -cp "$CP" -d . MetaTool.java MetaDump.java MapTool.java
+mkdir -p "$reference_out"   # ignored scratch for compiled classes and dumps
+javac -cp "$CP" -d "$reference_out" MetaTool.java MetaDump.java MapTool.java
 ```
 
 ## What each tool answers
@@ -31,8 +32,8 @@ writes input/output pairs. `check-bitencoding.mjs` re-derives them from the rule
 implements: a NUL marker char, one char per payload byte, chunks of 32767 chars.
 
 ```bash
-java -cp "$CP" MetaTool vectors 60 out/vectors.tsv
-node check-bitencoding.mjs out/vectors.tsv   # the committed vectors.tsv must match
+java -cp "$CP" MetaTool vectors 60 "$reference_out/vectors.tsv"
+node check-bitencoding.mjs "$reference_out/vectors.tsv"   # the committed vectors.tsv must match
 ```
 
 `MapTool` prints the byte-to-char mapping for all 256 values and the chunk boundaries at payload sizes
@@ -44,8 +45,8 @@ Reads a `.class` file with no dependencies beyond the compiler jar, prints `k`, 
 writes the decoded `d1` payload plus the `d2` string table.
 
 ```bash
-java -cp "$CP" MetaDump <path-to.class> out/dump
-# -> out/dump.bin (protobuf payload), out/dump.d2.txt (string table)
+java -cp "$CP" MetaDump <path-to.class> "$reference_out/dump"
+# -> $reference_out/dump.bin (protobuf payload), $reference_out/dump.d2.txt (string table)
 ```
 
 It works on compiler output and on our generated classfiles alike, which is how the writer is checked
@@ -58,7 +59,7 @@ into anything that re-parses as a message. This is what makes the field numbers 
 recollection - `JvmMetadata.proto` was written by reading these dumps.
 
 ```bash
-node dump-proto.mjs out/dump.bin out/dump.d2.txt
+node dump-proto.mjs "$reference_out/dump.bin" "$reference_out/dump.d2.txt"
 ```
 
 The payload is a length-delimited `StringTableTypes` followed by the bare `Class` or `Package`
@@ -71,7 +72,7 @@ represents a construct.
 
 ```bash
 java -cp "$LIB/*" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler \
-  -no-stdlib -classpath "$LIB/kotlin-stdlib-2.4.21.jar" -d out probes/Rich.kt
+  -no-stdlib -classpath "$LIB/kotlin-stdlib-2.4.21.jar" -d "$reference_out/probes" probes/Rich.kt
 ```
 
 - `Rich.kt` - generics with bounds, an interface with a default method, default and vararg arguments,

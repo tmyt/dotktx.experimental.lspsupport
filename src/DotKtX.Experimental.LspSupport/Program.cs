@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace DotKtx.Experimental.LspSupport;
+namespace DotKtX.Experimental.LspSupport;
 
 internal static class Program
 {
@@ -20,7 +20,7 @@ internal static class Program
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"DotKtx.Experimental.LspSupport: {ex.Message}");
+            Console.Error.WriteLine($"DotKtX.Experimental.LspSupport: {ex.Message}");
             return 1;
         }
     }
@@ -71,12 +71,12 @@ internal static class Program
 
         if (report.Errors.Count != 0)
         {
-            foreach (var error in report.Errors) Console.Error.WriteLine("DotKtx.Experimental.LspSupport: " + error);
+            foreach (var error in report.Errors) Console.Error.WriteLine("DotKtX.Experimental.LspSupport: " + error);
             return 1;
         }
 
         Console.WriteLine(
-            $"DotKtx.Experimental.LspSupport: projected {projection.ClassCount} class(es), " +
+            $"DotKtX.Experimental.LspSupport: projected {projection.ClassCount} class(es), " +
             $"{projection.CallableCount} callable(s) into {projection.Files.Count} source file(s), plus " +
             $"{javaProjection.ClassCount} Java class stub(s)");
         return 0;
@@ -104,9 +104,9 @@ internal static class Program
     {
         Console.Error.WriteLine(
             "usage:\n" +
-            "  DotKtx.Experimental.LspSupport generate --project <dir> --name <name> --output <dir> --sources <rsp> --klibs <rsp> [--stdlib-klib <klib>] [--builtins <jar>] [--java-projection <policy>]\n" +
+            "  DotKtX.Experimental.LspSupport generate --project <dir> --name <name> --output <dir> --sources <rsp> --klibs <rsp> [--stdlib-klib <klib>] [--builtins <jar>] [--java-projection <policy>]\n" +
             "    policy entries, ';' separated: type:<fqn> | package:<prefix> | library:<name> | all | no-supertype-closure | strict\n" +
-            "  DotKtx.Experimental.LspSupport clean --project <dir> --output <dir>");
+            "  DotKtX.Experimental.LspSupport clean --project <dir> --output <dir>");
         return 2;
     }
 }
