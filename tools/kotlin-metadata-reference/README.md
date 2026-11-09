@@ -15,7 +15,7 @@ lands so the companion projection can be re-measured rather than assumed.
 
 ```bash
 repo=$(git rev-parse --show-toplevel)
-LIB="$repo/artifacts/.packages/dotkt.toolchain/0.9.22/tools/kotc/lib"
+LIB="$repo/artifacts/.packages/dotkt.toolchain/0.9.23/tools/kotc/lib"
 reference_out="$repo/artifacts/verification/kotlin-metadata-reference"
 CP="$LIB/kotlin-compiler-embeddable-2.4.21.jar:$LIB/kotlin-stdlib-2.4.21.jar:$reference_out"
 cd "$repo/tools/kotlin-metadata-reference"
