@@ -18,6 +18,9 @@ const receiverDocumentText = readFileSync(receiverPath, "utf8")
 const suspendPath = join(projectDir, "SuspendLambda.kt")
 const suspendUri = pathToFileURL(suspendPath).href
 const suspendDocumentText = readFileSync(suspendPath, "utf8")
+const constructorPath = join(projectDir, "SecondaryConstructors.kt")
+const constructorUri = pathToFileURL(constructorPath).href
+const constructorDocumentText = readFileSync(constructorPath, "utf8")
 const rootUri = pathToFileURL(projectDir).href
 const documentText = readFileSync(sourcePath, "utf8")
 // The projection report is the only place that records which representation the build produced, and
@@ -317,6 +320,14 @@ try {
             text: suspendDocumentText,
         },
     })
+    notify("textDocument/didOpen", {
+        textDocument: {
+            uri: constructorUri,
+            languageId: "kotlin",
+            version: 1,
+            text: constructorDocumentText,
+        },
+    })
 
     const overlayLabels = await waitForCompletion(
         { line: 0, character: "import kotlin.clr.".length },
@@ -457,6 +468,11 @@ try {
     }
 
     if (metadataEnabled) {
+        const constructorErrors = await errorDiagnostics(constructorUri)
+        if (constructorErrors.length !== 0) {
+            throw new Error(`Secondary constructor diagnostics: ${JSON.stringify(constructorErrors)}`)
+        }
+        console.log("Kotlin LSP secondary constructors: overloads, default/named arguments, no primary, generic inference")
         const receiverErrors = await errorDiagnostics(receiverUri)
         if (receiverErrors.length !== 0) {
             throw new Error(`Receiver lambda diagnostics: ${JSON.stringify(receiverErrors)}`)

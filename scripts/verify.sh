@@ -193,7 +193,8 @@ java -cp "$compiler_lib/*" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler \
   -no-stdlib -classpath "$tool_out/kotlin-builtins.jar:$java_stub_jar" \
   -Xcompanion-blocks-and-extensions \
   -d "$verification_dir/receiver-consumer" \
-  "$repo_dir/tests/Smoke/ReceiverLambda.kt" "$repo_dir/tests/Smoke/SuspendLambda.kt"
+  "$repo_dir/tests/Smoke/ReceiverLambda.kt" "$repo_dir/tests/Smoke/SuspendLambda.kt" \
+  "$repo_dir/tests/Smoke/SecondaryConstructors.kt"
 # Overloads that erase to one JVM descriptor are kept by mangling the JVM name, not by dropping them.
 rg -q '^- member\.mangled\.method: [1-9]' "$report"
 # Top-level CLR declarations have no owning class, so they only exist for the analyzer as file facades
