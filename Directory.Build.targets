@@ -1,0 +1,19 @@
+<Project>
+  <!-- DotKt compiler output is tied to the exact runtime ABI of that release. -->
+  <ItemGroup>
+    <PackageReference Update="DotKt.Toolchain" Version="[$(DotKtVersion)]" />
+    <PackageReference Update="DotKt.Stdlib" Version="[$(DotKtVersion)]" />
+  </ItemGroup>
+  <PropertyGroup>
+    <WarningsAsErrors>$(WarningsAsErrors);NU1605;NU1608</WarningsAsErrors>
+  </PropertyGroup>
+  <Target Name="CheckDotKtSdkVersion" BeforeTargets="CollectPackageReferences;PrepareForBuild"
+          Condition="'$(MSBuildProjectExtension)' == '.ktproj' or '$(MSBuildProjectName)' == 'DotKtX.Experimental.LspSupport'">
+    <PropertyGroup>
+      <_DotKtGlobalJson>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)global.json'))</_DotKtGlobalJson>
+      <_DotKtVersionPattern>$([System.Text.RegularExpressions.Regex]::Escape('$(DotKtVersion)'))</_DotKtVersionPattern>
+    </PropertyGroup>
+    <Error Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(_DotKtGlobalJson)', '&quot;DotKt\.Sdk(?:\.Mpp)?&quot;\s*:\s*&quot;(?!$(_DotKtVersionPattern)&quot;)'))"
+           Text="The DotKt SDK versions in global.json must match DotKt.Toolchain and DotKt.Stdlib ($(DotKtVersion))." />
+  </Target>
+</Project>

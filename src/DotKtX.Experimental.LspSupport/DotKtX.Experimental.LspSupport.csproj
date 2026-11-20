@@ -64,9 +64,11 @@
                   Overwrite="true" />
   </Target>
 
-  <Target Name="SetLspNuspecProperties" BeforeTargets="GenerateNuspec">
+  <!-- .NET SDK 11 also reads nuspec tokens while calculating package output paths. -->
+  <Target Name="SetLspNuspecProperties" BeforeTargets="_GetOutputItemsFromPack;GenerateNuspec">
     <PropertyGroup>
-      <NuspecProperties>version=$(PackageVersion);toolOutput=$(TargetDir)</NuspecProperties>
+      <NuspecProperties>version=$(PackageVersion);toolOutput=$(TargetDir);dotKtVersion=$(DotKtVersion);versionFile=$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'dotkt-version.txt'))</NuspecProperties>
     </PropertyGroup>
+    <WriteLinesToFile File="$(IntermediateOutputPath)dotkt-version.txt" Lines="$(DotKtVersion)" Overwrite="true" WriteOnlyWhenDifferent="true" />
   </Target>
 </Project>

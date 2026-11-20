@@ -14,6 +14,11 @@
   <Target Name="DotKtxWriteExperimentalLspInputs"
           DependsOnTargets="DotKtResolveKlibReferences"
           Condition="'$(DotKtxExperimentalLspSupportEnabled)' == 'true' and '$(DesignTimeBuild)' != 'true' and '$(IsCrossTargetingBuild)' != 'true'">
+    <ReadLinesFromFile File="$(MSBuildThisFileDirectory)dotkt-version.txt">
+      <Output TaskParameter="Lines" PropertyName="_DotKtxLspToolchainVersion" />
+    </ReadLinesFromFile>
+    <Error Condition="'$(DotKtVersion)' != '$(_DotKtxLspToolchainVersion)'"
+           Text="DotKtX.Experimental.LspSupport requires DotKt $(_DotKtxLspToolchainVersion). This project uses $(DotKtVersion)." />
     <ItemGroup>
       <!-- NuGet .props are imported before some SDK default items. Enforce the boundary again here,
            immediately before both projection and KotlinCompile consume @(KotlinCompile). -->

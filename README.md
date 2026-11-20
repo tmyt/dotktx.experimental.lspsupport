@@ -27,14 +27,15 @@ Add the package as a private, build-only dependency:
 <ItemGroup>
   <PackageReference
     Include="DotKtX.Experimental.LspSupport"
-    Version="0.9.7"
+    Version="[0.9.8]"
     PrivateAssets="all"
     IncludeAssets="build" />
 </ItemGroup>
 ```
 
-This package targets DotKt SDK `0.9.25`. LspSupport versions are released
-independently of the compiler version.
+Build LspSupport 0.9.8 and its consumers with DotKt SDK and Toolchain `0.9.28`.
+The build target checks this version before generating the workspace. The published
+LspSupport `0.9.7` package targets SDK `0.9.25`.
 
 Add the generated root model to `.gitignore`:
 
@@ -108,7 +109,7 @@ both declarations: the Kotlin name lives in the metadata and only the JVM name
 is mangled.
 
 CLR constructor overloads retain the primary/secondary flags supplied by DotKt SDK
-`0.9.25`. No constructor normalization is applied by this package. The regression
+`0.9.25` and later. No constructor normalization is applied by this package. The regression
 fixtures check CLR overloads and Kotlin secondary constructors, including default
 and named arguments, classes without a primary constructor, and generic inference.
 
@@ -181,8 +182,8 @@ This is an original C# MSBuild integration tool, rather than a port of a Kotlin 
 library. It follows the shared porting layout with a `.csproj` using
 `Microsoft.NET.Sdk` and `OutputType=Exe`; `commonMain`, `clrMain`, `DotKtCommon`
 and the MPP SDK do not apply. The Kotlin projects under `tests/` are consumers and
-fixtures built with `DotKt.Sdk`, pinned to `0.9.25` in `global.json`. The toolchain
-and CLR standard library use DotKt `0.9.25` / Kotlin `2.4.21`.
+fixtures built with `DotKt.Sdk`, pinned to `0.9.28` in `global.json`. The toolchain
+and CLR standard library use DotKt `0.9.28` / Kotlin `2.4.21`.
 
 ```text
 src/DotKtX.Experimental.LspSupport/
@@ -217,7 +218,7 @@ node tests/Smoke/verify-lsp.mjs
 ```
 
 `build.sh` builds the generator. `pack.sh` creates
-`artifacts/packages/DotKtX.Experimental.LspSupport.0.9.7.nupkg`, including its
+`artifacts/packages/DotKtX.Experimental.LspSupport.0.9.8.nupkg`, including its
 runtime dependencies, MSBuild integration, `LICENSE.txt` and `NOTICE.txt`.
 `verify.sh` packs that package, builds the smoke consumer through a
 `PackageReference`, runs it and compares stdout with `tests/Smoke/expected.txt`.
@@ -258,12 +259,18 @@ and all real LSP assertions passed with DotKt `0.9.25`, Kotlin `2.4.21`,
 completion, navigation, metadata hover, receiver/suspend callback typing and
 the negative control for ordinary callbacks.
 
+Validation on 2026-11-18: full package/MSBuild verification and all real LSP
+assertions passed with DotKt `0.9.27`, Kotlin `2.4.21` and .NET SDK `11.0.100`,
+including secondary constructors. Package creation also passed with .NET SDK
+`10.0.401`. Nuspec substitutions are initialized before NuGet calculates package
+output paths, supporting both SDK versions.
+
 ## Sources and licensing
 
 The integration code is licensed under Apache-2.0; see `LICENSE.txt`.
 The Kotlin metadata schemas and the builtins archive originate from
 [JetBrains Kotlin](https://github.com/JetBrains/kotlin), using the Kotlin `2.4.21`
-compiler distribution in `DotKt.Toolchain 0.9.25` as the format reference.
+compiler distribution in `DotKt.Toolchain 0.9.28` as the format reference.
 `NOTICE.txt` records the third-party attribution. The optional JetBrains
 [kotlin-lsp](https://github.com/Kotlin/kotlin-lsp) checkout under
 `upstream/kotlin-lsp/` is for investigation only and is not a build input.
