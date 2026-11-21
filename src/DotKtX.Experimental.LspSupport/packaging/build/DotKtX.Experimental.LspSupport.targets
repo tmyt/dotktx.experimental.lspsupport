@@ -35,6 +35,7 @@
     <PropertyGroup>
       <_DotKtxExperimentalLspKlibs>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'dotkt-lsp-klibs.rsp'))</_DotKtxExperimentalLspKlibs>
       <_DotKtxExperimentalLspSources>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'dotkt-lsp-sources.rsp'))</_DotKtxExperimentalLspSources>
+      <_DotKtxExperimentalLspPlugins>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'dotkt-lsp-plugins.rsp'))</_DotKtxExperimentalLspPlugins>
     </PropertyGroup>
     <ItemGroup>
       <_DotKtxExperimentalLspKlib Include="@(DotKtResolvedKlibReference);$(DotKtStdlib)" />
@@ -47,8 +48,12 @@
                       Lines="@(KotlinCompile->'%(FullPath)')"
                       Overwrite="true"
                       WriteOnlyWhenDifferent="true" />
+    <WriteLinesToFile File="$(_DotKtxExperimentalLspPlugins)"
+                      Lines="@(DotKtCompilerPlugin->'%(FullPath)')"
+                      Overwrite="true"
+                      WriteOnlyWhenDifferent="true" />
     <ItemGroup>
-      <FileWrites Include="$(_DotKtxExperimentalLspKlibs);$(_DotKtxExperimentalLspSources)" />
+      <FileWrites Include="$(_DotKtxExperimentalLspKlibs);$(_DotKtxExperimentalLspSources);$(_DotKtxExperimentalLspPlugins)" />
     </ItemGroup>
     <!-- The timestamp belongs to the active build configuration. Unchanged JSON and shim contents
          keep their own timestamps, so touching an input does not keep retriggering the target. -->
@@ -62,12 +67,12 @@
   <Target Name="DotKtxGenerateExperimentalLspWorkspace"
           BeforeTargets="KotlinCompile"
           DependsOnTargets="DotKtxWriteExperimentalLspInputs"
-          Inputs="$(_DotKtxExperimentalLspTool);$(_DotKtxExperimentalLspTargets);$(_DotKtxExperimentalLspVersionFile);$(MSBuildProjectFullPath);$(ProjectAssetsFile);$(_DotKtxExperimentalLspKlibs);$(_DotKtxExperimentalLspSources)"
+          Inputs="$(_DotKtxExperimentalLspTool);$(_DotKtxExperimentalLspTargets);$(_DotKtxExperimentalLspVersionFile);$(MSBuildProjectFullPath);$(ProjectAssetsFile);$(_DotKtxExperimentalLspKlibs);$(_DotKtxExperimentalLspSources);$(_DotKtxExperimentalLspPlugins)"
           Outputs="$(_DotKtxExperimentalLspStamp)"
           Condition="'$(DotKtxExperimentalLspSupportEnabled)' == 'true' and '$(DesignTimeBuild)' != 'true' and '$(IsCrossTargetingBuild)' != 'true'">
     <Message Importance="high" Text="DotKtX.Experimental.LspSupport: generating analysis workspace for @(_DotKtxExperimentalLspKlib->Count()) KLIB(s)" />
     <Exec WorkingDirectory="$(MSBuildProjectDirectory)"
-          Command="dotnet &quot;$(_DotKtxExperimentalLspTool)&quot; generate --project &quot;$(MSBuildProjectDirectory)&quot; --name &quot;$(MSBuildProjectName)&quot; --output &quot;$(_DotKtxExperimentalLspOutput)&quot; --sources &quot;$(_DotKtxExperimentalLspSources)&quot; --klibs &quot;$(_DotKtxExperimentalLspKlibs)&quot;" />
+          Command="dotnet &quot;$(_DotKtxExperimentalLspTool)&quot; generate --project &quot;$(MSBuildProjectDirectory)&quot; --name &quot;$(MSBuildProjectName)&quot; --output &quot;$(_DotKtxExperimentalLspOutput)&quot; --sources &quot;$(_DotKtxExperimentalLspSources)&quot; --klibs &quot;$(_DotKtxExperimentalLspKlibs)&quot; --plugins &quot;$(_DotKtxExperimentalLspPlugins)&quot;" />
   </Target>
 
   <Target Name="DotKtxCleanExperimentalLspWorkspace"

@@ -92,6 +92,8 @@ assert.equal(settings.isHmppEnabled, true)
 assert.equal(settings.compilerArguments[0], "M")
 const compiler = JSON.parse(settings.compilerArguments.slice(1))
 assert.equal(compiler.companionBlocks, true)
+assert.deepEqual(compiler.pluginClasspaths, [])
+assert.deepEqual(compiler.optIn, ["kotlin.ExperimentalUnsignedTypes"])
 assert.match(settings.additionalArguments, /(?:^| )-Xcompanion-blocks(?: |$)/)
 assert(module.contentRoots.some(root => root.sourceRoots.some(source =>
     path.join(source.path, "java", "io", "Serializable.kt") === shim)))
@@ -122,6 +124,34 @@ fi
 # Exercise migration and workspace ownership with an independent project directory.
 migration_dir="$(mktemp -d "$verification_dir/migration.XXXXXX")"
 trap 'rm -rf -- "$migration_dir"' EXIT
+# Inject a plugin registration for workspace generation, then remove it on the next invocation.
+plugin_dir="$migration_dir/compiler plugins"
+plugin_jar="$plugin_dir/kotlin-compose-compiler-plugin-embeddable.jar"
+mkdir -p "$plugin_dir"
+touch "$plugin_jar"
+cat >"$migration_dir/plugin.targets" <<'XML'
+<Project>
+  <ItemGroup>
+    <DotKtCompilerPlugin Include="$(MSBuildThisFileDirectory)compiler plugins/kotlin-compose-compiler-plugin-embeddable.jar" Condition="'$(MSBuildProjectName)' == 'Smoke'" />
+  </ItemGroup>
+</Project>
+XML
+generate_smoke_workspace() {
+  dotnet build "$smoke" -c Release --no-restore -t:DotKtxGenerateExperimentalLspWorkspace "$@"
+}
+assert_plugin_classpath() {
+  node -e '
+    const assert = require("node:assert/strict")
+    const workspace = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"))
+    const compiler = JSON.parse(workspace.kotlinSettings[0].compilerArguments.slice(1))
+    assert.deepEqual(compiler.pluginClasspaths, process.argv.slice(2))
+  ' "$workspace" "$@"
+}
+run_logged "$verification_dir/Smoke.plugin.log" generate_smoke_workspace "$@" \
+  "-p:CustomAfterMicrosoftCommonTargets=$migration_dir/plugin.targets"
+assert_plugin_classpath "$plugin_jar"
+run_logged "$verification_dir/Smoke.plugin-removed.log" generate_smoke_workspace "$@"
+assert_plugin_classpath
 legacy="$migration_dir/.dotkt/lsp"
 mkdir -p "$legacy/libraries" "$legacy/stubs"
 touch "$legacy/libraries/dotkt-klib-java-stubs.jar" "$legacy/stubs/Old.kt" "$legacy/projection-report.md"
@@ -153,6 +183,7 @@ test ! -e "$shim"
 test ! -e "$model/.stamp"
 test ! -e "$intermediate/dotkt-lsp-klibs.rsp"
 test ! -e "$intermediate/dotkt-lsp-sources.rsp"
+test ! -e "$intermediate/dotkt-lsp-plugins.rsp"
 run_logged "$verification_dir/Smoke.rebuild.log" dotnet build "$smoke" -c Release "$@"
 test -f "$workspace"
 test -f "$shim"

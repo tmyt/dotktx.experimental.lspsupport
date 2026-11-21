@@ -191,14 +191,18 @@ function hoverText(result) {
     return contents?.value ?? ""
 }
 
-async function errorDiagnostics(uri) {
+async function diagnostics(uri) {
     const report = await request("textDocument/diagnostic", {
         textDocument: { uri },
     })
     if (report?.kind !== "full" || !Array.isArray(report.items)) {
         throw new Error(`Expected a full diagnostic report for ${uri}: ${JSON.stringify(report)}`)
     }
-    return report.items.filter(diagnostic => diagnostic.severity === 1)
+    return report.items
+}
+
+async function errorDiagnostics(uri) {
+    return (await diagnostics(uri)).filter(diagnostic => diagnostic.severity === 1)
 }
 
 function klibDefinition(result, symbol) {
@@ -451,7 +455,8 @@ try {
     })
     klibDefinition(interfaceDefinitions, "ICloneable")
 
-    const interopErrors = await errorDiagnostics(interopUri)
+    const interopErrors = (await diagnostics(interopUri)).filter(diagnostic =>
+        diagnostic.severity === 1 || diagnostic.message.includes("kotlin.ExperimentalUnsignedTypes"))
     if (interopErrors.length !== 0) {
         throw new Error(`CLR interop diagnostics: ${JSON.stringify(interopErrors)}`)
     }

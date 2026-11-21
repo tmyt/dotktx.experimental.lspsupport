@@ -18,3 +18,5 @@ fun <T> appendValues(
     builder: System.Text.StringBuilder,
     values: System.Collections.Generic.IEnumerable<T>,
 ): System.Text.StringBuilder = builder.AppendJoin(',', values)
+
+fun firstUnsigned(values: UIntArray): UInt = values[0]

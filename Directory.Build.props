@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <!-- LspSupport has its own release sequence, independent of the compiler below. -->
-    <VersionPrefix>0.9.12</VersionPrefix>
+    <VersionPrefix>0.9.13</VersionPrefix>
     <VersionSuffix></VersionSuffix>
     <DotKtVersion>0.9.31</DotKtVersion>
     <TargetFramework>net10.0</TargetFramework>

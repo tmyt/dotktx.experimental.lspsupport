@@ -34,7 +34,8 @@ internal static class Program
         var sourceList = Path.GetFullPath(options.Required("sources"));
         var sources = ReadResponseFile(sourceList);
         var klibs = ReadResponseFile(options.Required("klibs"));
-        WithWorkspaceLock(project, () => WorkspaceWriter.Generate(project, projectName, output, sources, klibs, sourceList));
+        var plugins = options.Optional("plugins") is { } pluginList ? ReadResponseFile(pluginList) : [];
+        WithWorkspaceLock(project, () => WorkspaceWriter.Generate(project, projectName, output, sources, klibs, plugins, sourceList));
         return 0;
     }
 
@@ -85,7 +86,7 @@ internal static class Program
     {
         Console.Error.WriteLine(
             "usage:\n" +
-            "  DotKtX.Experimental.LspSupport generate --project <dir> --name <name> --output <dir> --sources <rsp> --klibs <rsp>\n" +
+            "  DotKtX.Experimental.LspSupport generate --project <dir> --name <name> --output <dir> --sources <rsp> --klibs <rsp> [--plugins <rsp>]\n" +
             "  DotKtX.Experimental.LspSupport clean --project <dir> --output <dir>");
         return 2;
     }

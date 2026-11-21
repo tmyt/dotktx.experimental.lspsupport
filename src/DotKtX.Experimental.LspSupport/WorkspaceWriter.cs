@@ -20,6 +20,7 @@ internal static class WorkspaceWriter
         string outputDirectory,
         IReadOnlyList<string> sources,
         IReadOnlyList<string> klibs,
+        IReadOnlyList<string> plugins,
         string sourceList)
     {
         var workspacePath = Path.Combine(projectDirectory, "workspace.json");
@@ -35,7 +36,8 @@ internal static class WorkspaceWriter
         }
 
         var compatibilityPath = Path.Combine(outputDirectory, CompatibilityRoot);
-        var workspace = BuildWorkspace(projectName, compatibilityPath, sources, libraries);
+        var compilerPlugins = plugins.Distinct(PathComparer);
+        var workspace = BuildWorkspace(projectName, compatibilityPath, sources, libraries, compilerPlugins);
 
         // The common analyzer still looks up this marker when checking some Kotlin built-in supertypes.
         WriteText(Path.Combine(compatibilityPath, "java", "io", "Serializable.kt"),
@@ -93,7 +95,8 @@ internal static class WorkspaceWriter
         string projectName,
         string compatibilityPath,
         IReadOnlyList<string> sources,
-        IReadOnlyList<string> klibs)
+        IReadOnlyList<string> klibs,
+        IEnumerable<string> compilerPlugins)
     {
         var sourceRoots = sources.Where(File.Exists)
             .Select(path => Path.GetDirectoryName(path)!)
@@ -117,6 +120,17 @@ internal static class WorkspaceWriter
         var libraryRoots = new JsonArray();
         foreach (var klib in klibs)
             libraryRoots.Add(new JsonObject { ["path"] = klib });
+
+        var compilerArguments = new JsonObject {
+            ["autoAdvanceLanguageVersion"] = false,
+            ["autoAdvanceApiVersion"] = false,
+            ["apiVersion"] = "2.4",
+            ["languageVersion"] = "2.4",
+            ["companionBlocks"] = true,
+            ["companionBlocksAndExtensions"] = true,
+            ["pluginClasspaths"] = ToJsonPaths(compilerPlugins),
+            ["optIn"] = new JsonArray("kotlin.ExperimentalUnsignedTypes"),
+        };
 
         var moduleName = ModulePrefix + projectName;
         return new JsonObject {
@@ -151,7 +165,7 @@ internal static class WorkspaceWriter
                     ["isHmppEnabled"] = true,
                     ["pureKotlinSourceFolders"] = ToJsonPaths(sourceRoots),
                     ["kind"] = "source_set_holder",
-                    ["compilerArguments"] = "M{\"autoAdvanceLanguageVersion\":false,\"autoAdvanceApiVersion\":false,\"apiVersion\":\"2.4\",\"languageVersion\":\"2.4\",\"companionBlocks\":true,\"companionBlocksAndExtensions\":true}",
+                    ["compilerArguments"] = "M" + compilerArguments.ToJsonString(),
                     ["additionalArguments"] = "-Xcompanion-blocks",
                     ["scriptTemplates"] = null,
                     ["scriptTemplatesClasspath"] = null,
