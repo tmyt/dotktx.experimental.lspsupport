@@ -1,11 +1,11 @@
 # DotKtX.Experimental.LspSupport 引継ぎ
 
-パッケージ: LspSupport 0.9.8（コンパイラとは独立した採番）
-対象: DotKt 0.9.28 / Kotlin 2.4.21
-最終更新: 2026-11-20（SDK 0.9.28 対応）
+パッケージ: LspSupport 0.9.9（コンパイラとは独立した採番）
+対象: DotKt 0.9.29 / Kotlin 2.4.21
+最終更新: 2026-11-21（SDK 0.9.29 対応）
 
 レイアウト変更後のパッケージは 0.9.4。SDK 0.9.25 対応版は 0.9.7。プロジェクト・DLL・NuGet ID は
-`DotKtX.Experimental.LspSupport`。SDK は 0.9.28 に更新。Kotlin は 2.4.21。
+`DotKtX.Experimental.LspSupport`。SDK は 0.9.29 に更新。Kotlin は 2.4.21。
 生成物は `artifacts/bin`・`artifacts/obj`・`artifacts/packages`・`artifacts/verification` を参照する。
 
 0.9.2 では suspend 型フラグと Unit ABI の修正を取り込んだ。

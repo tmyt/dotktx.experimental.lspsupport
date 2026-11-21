@@ -27,13 +27,13 @@ Add the package as a private, build-only dependency:
 <ItemGroup>
   <PackageReference
     Include="DotKtX.Experimental.LspSupport"
-    Version="[0.9.8]"
+    Version="[0.9.9]"
     PrivateAssets="all"
     IncludeAssets="build" />
 </ItemGroup>
 ```
 
-Build LspSupport 0.9.8 and its consumers with DotKt SDK and Toolchain `0.9.28`.
+Build LspSupport 0.9.9 and its consumers with DotKt SDK and Toolchain `0.9.29`.
 The build target checks this version before generating the workspace. The published
 LspSupport `0.9.7` package targets SDK `0.9.25`.
 
@@ -182,8 +182,8 @@ This is an original C# MSBuild integration tool, rather than a port of a Kotlin 
 library. It follows the shared porting layout with a `.csproj` using
 `Microsoft.NET.Sdk` and `OutputType=Exe`; `commonMain`, `clrMain`, `DotKtCommon`
 and the MPP SDK do not apply. The Kotlin projects under `tests/` are consumers and
-fixtures built with `DotKt.Sdk`, pinned to `0.9.28` in `global.json`. The toolchain
-and CLR standard library use DotKt `0.9.28` / Kotlin `2.4.21`.
+fixtures built with `DotKt.Sdk`, pinned to `0.9.29` in `global.json`. The toolchain
+and CLR standard library use DotKt `0.9.29` / Kotlin `2.4.21`.
 
 ```text
 src/DotKtX.Experimental.LspSupport/
@@ -218,7 +218,7 @@ node tests/Smoke/verify-lsp.mjs
 ```
 
 `build.sh` builds the generator. `pack.sh` creates
-`artifacts/packages/DotKtX.Experimental.LspSupport.0.9.8.nupkg`, including its
+`artifacts/packages/DotKtX.Experimental.LspSupport.0.9.9.nupkg`, including its
 runtime dependencies, MSBuild integration, `LICENSE.txt` and `NOTICE.txt`.
 `verify.sh` packs that package, builds the smoke consumer through a
 `PackageReference`, runs it and compares stdout with `tests/Smoke/expected.txt`.
@@ -270,7 +270,7 @@ output paths, supporting both SDK versions.
 The integration code is licensed under Apache-2.0; see `LICENSE.txt`.
 The Kotlin metadata schemas and the builtins archive originate from
 [JetBrains Kotlin](https://github.com/JetBrains/kotlin), using the Kotlin `2.4.21`
-compiler distribution in `DotKt.Toolchain 0.9.28` as the format reference.
+compiler distribution in `DotKt.Toolchain 0.9.29` as the format reference.
 `NOTICE.txt` records the third-party attribution. The optional JetBrains
 [kotlin-lsp](https://github.com/Kotlin/kotlin-lsp) checkout under
 `upstream/kotlin-lsp/` is for investigation only and is not a build input.
