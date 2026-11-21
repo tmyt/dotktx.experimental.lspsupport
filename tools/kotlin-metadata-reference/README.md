@@ -1,5 +1,7 @@
 # kotlin.Metadata reference tooling
 
+> These probes describe JVM metadata projection through 0.9.11. See the [current workspace model](../../README.md#workspace-model) for 0.9.12 and later.
+
 Development-only tooling. It is not part of the NuGet package and nothing in `src/` depends on it.
 
 `KotlinMetadata.cs` writes the `kotlin.Metadata` annotation that makes a projected classfile *be* the

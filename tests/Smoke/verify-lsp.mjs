@@ -10,8 +10,8 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 const projectDir = resolve(dirname(fileURLToPath(import.meta.url)))
 const sourcePath = join(projectDir, "Program.kt")
 const sourceUri = pathToFileURL(sourcePath).href
-const projectionPath = join(projectDir, "JavaProjection.kt")
-const projectionUri = pathToFileURL(projectionPath).href
+const interopPath = join(projectDir, "ClrInterop.kt")
+const interopUri = pathToFileURL(interopPath).href
 const receiverPath = join(projectDir, "ReceiverLambda.kt")
 const receiverUri = pathToFileURL(receiverPath).href
 const receiverDocumentText = readFileSync(receiverPath, "utf8")
@@ -23,14 +23,8 @@ const constructorUri = pathToFileURL(constructorPath).href
 const constructorDocumentText = readFileSync(constructorPath, "utf8")
 const rootUri = pathToFileURL(projectDir).href
 const documentText = readFileSync(sourcePath, "utf8")
-// The projection report is the only place that records which representation the build produced, and
-// the two representations are observably different in the editor.
-const reportPath = join(projectDir, ".dotkt", "lsp", "projection-report.md")
-const metadataEnabled = existsSync(reportPath) &&
-    /^- metadata\.class: /m.test(readFileSync(reportPath, "utf8"))
-const projectionDocumentText = readFileSync(projectionPath, "utf8")
-const baseAnalysisDocumentText = "import kotlin.clr.\n" + documentText
-const analysisDocumentText = baseAnalysisDocumentText
+const interopDocumentText = readFileSync(interopPath, "utf8")
+const analysisDocumentText = "import kotlin.clr.\n" + documentText
 const ownsSystemPath = !process.env.KOTLIN_LSP_SYSTEM_PATH
 const systemPath = process.env.KOTLIN_LSP_SYSTEM_PATH ??
     join(projectDir, "..", "..", "artifacts", "verification", `lsp-verifier-${process.pid}`)
@@ -49,11 +43,11 @@ function findServer() {
         for (const entry of readdirSync(root)) {
             if (!entry.startsWith("jetbrains.kotlin-server-")) continue
             const server = join(root, entry, "server", "bin", "intellij-server")
-            if (existsSync(server)) candidates.push(server)
+            if (existsSync(server)) candidates.push({ entry, server })
         }
     }
-    candidates.sort()
-    return candidates.at(-1)
+    candidates.sort((a, b) => a.entry.localeCompare(b.entry, "en", { numeric: true }))
+    return candidates.at(-1)?.server
 }
 
 const serverPath = findServer()
@@ -79,7 +73,6 @@ child.stderr.on("data", chunk => process.stderr.write(chunk))
 let nextId = 1
 const pending = new Map()
 let incoming = Buffer.alloc(0)
-let latestDiagnostics = []
 let receiverDiagnostics = []
 
 function send(message) {
@@ -129,11 +122,6 @@ function handle(message) {
         pending.delete(message.id)
         if (message.error) waiter.reject(new Error(JSON.stringify(message.error)))
         else waiter.resolve(message.result)
-        return
-    }
-
-    if (message.method === "textDocument/publishDiagnostics" && message.params?.uri === sourceUri) {
-        latestDiagnostics = message.params.diagnostics ?? []
         return
     }
 
@@ -211,6 +199,25 @@ async function errorDiagnostics(uri) {
         throw new Error(`Expected a full diagnostic report for ${uri}: ${JSON.stringify(report)}`)
     }
     return report.items.filter(diagnostic => diagnostic.severity === 1)
+}
+
+function klibDefinition(result, symbol) {
+    const locations = Array.isArray(result) ? result : result ? [result] : []
+    const uris = locations.map(location => location.targetUri ?? location.uri)
+    const uri = uris.find(uri => uri?.includes(".klib!/default/linkdata/"))
+    if (!uri) throw new Error(`Expected a KLIB definition for ${symbol}: ${uris.join(", ")}`)
+    return uri
+}
+
+async function waitForErrors(uri, matches) {
+    const deadline = Date.now() + 5000
+    let errors
+    do {
+        errors = await errorDiagnostics(uri)
+        if (matches(errors)) return errors
+        await new Promise(resolve => setTimeout(resolve, 100))
+    } while (Date.now() < deadline)
+    return errors
 }
 
 function positionAfter(text, needle) {
@@ -298,10 +305,10 @@ try {
     })
     notify("textDocument/didOpen", {
         textDocument: {
-            uri: projectionUri,
+            uri: interopUri,
             languageId: "kotlin",
             version: 1,
-            text: projectionDocumentText,
+            text: interopDocumentText,
         },
     })
     notify("textDocument/didOpen", {
@@ -338,7 +345,7 @@ try {
         "byref", "clrEvent", "stackBuffer",
     ]) {
         if (!overlayLabels.includes(expected)) {
-            throw new Error(`DotKt overlay completion did not contain '${expected}'`)
+            throw new Error(`DotKt standard library completion did not contain '${expected}'`)
         }
     }
     const importLabels = await waitForCompletion(
@@ -347,7 +354,7 @@ try {
     )
     for (const expected of ["Encoding", "Rune", "StringBuilder", "UTF8Encoding"]) {
         if (!importLabels.includes(expected)) {
-            throw new Error(`Java-projected import completion did not contain '${expected}'`)
+            throw new Error(`CLR import completion did not contain '${expected}'`)
         }
     }
     const memberLabels = await waitForCompletion(
@@ -363,10 +370,15 @@ try {
         textDocument: { uri: sourceUri },
         position: { line: 1, character: "import System.Text.Stri".length },
     })
-    const locations = Array.isArray(definitions) ? definitions : definitions ? [definitions] : []
-    const definitionUris = locations.map(location => location.targetUri ?? location.uri)
-    if (!definitionUris.some(uri => uri?.includes("dotkt-klib-java-stubs.jar"))) {
-        throw new Error(`Definition did not navigate to the CLR stub: ${definitionUris.join(", ")}`)
+    const builderDefinition = klibDefinition(definitions, "StringBuilder")
+    const decompile = initializeResult.capabilities.executeCommandProvider?.commands
+        .find(command => command.endsWith("decompile"))
+    if (!decompile) throw new Error("Kotlin LSP did not advertise its decompile command")
+    const decompiled = await request("workspace/executeCommand", {
+        command: decompile, arguments: [builderDefinition],
+    })
+    if (decompiled?.language !== "kotlin" || !/\bclass StringBuilder\b/.test(decompiled.code ?? "")) {
+        throw new Error(`Kotlin LSP could not open the CLR KLIB definition: ${builderDefinition}`)
     }
 
     const hover = await request("textDocument/hover", {
@@ -374,30 +386,14 @@ try {
         position: { line: 7, character: "    return builder.ToStr".length },
     })
     const renderedHover = hoverText(hover)
-    if (metadataEnabled) {
-        // With kotlin.Metadata the declaration is the KLIB's own, so a CLR non-null String stays
-        // non-null. The Java-only path physically cannot express that: an unannotated Java return is
-        // flexible and always renders with the nullable upper bound.
-        if (!/ToString\(\): String(?!\?)/.test(renderedHover)) {
-            throw new Error(`ToString hover did not expose the declared Kotlin return type: ${renderedHover}`)
-        }
-    } else if (!renderedHover.includes("ToString(): String?")) {
-        // Kotlin's internal type is flexible for an unannotated Java String return. The LSP hover renderer
-        // prints its nullable upper bound rather than source-only `String!`; the non-null return statement in
-        // Program.kt verifies that it was not imported as an ordinary nullable Kotlin type.
-        throw new Error(`ToString hover did not expose the Java flexible-type upper bound: ${renderedHover}`)
-    }
-    const typeErrors = latestDiagnostics.filter(diagnostic =>
-        /type mismatch|return type mismatch/i.test(diagnostic.message ?? "")
-    )
-    if (typeErrors.length !== 0) {
-        throw new Error(`Java platform return was rejected as Kotlin String: ${JSON.stringify(typeErrors)}`)
+    if (!/ToString\(\): String(?!\?)/.test(renderedHover)) {
+        throw new Error(`ToString hover did not expose the declared Kotlin return type: ${renderedHover}`)
     }
 
     const encodingLabels = await waitForCompletion(
-        positionAfter(projectionDocumentText, "Encoding."),
+        positionAfter(interopDocumentText, "Encoding."),
         "UTF8",
-        projectionUri,
+        interopUri,
     )
     for (const expected of ["GetEncoding", "UTF8"]) {
         if (!encodingLabels.includes(expected)) {
@@ -405,24 +401,18 @@ try {
         }
     }
     const encodingDefinitions = await request("textDocument/definition", {
-        textDocument: { uri: projectionUri },
+        textDocument: { uri: interopUri },
         position: {
             line: 0,
             character: "import System.Text.Enco".length,
         },
     })
-    const encodingLocations = Array.isArray(encodingDefinitions)
-        ? encodingDefinitions
-        : encodingDefinitions ? [encodingDefinitions] : []
-    const encodingDefinitionUris = encodingLocations.map(location => location.targetUri ?? location.uri)
-    if (!encodingDefinitionUris.some(uri => uri?.includes("dotkt-klib-java-stubs.jar"))) {
-        throw new Error(`Encoding definition did not navigate to the Java stub: ${encodingDefinitionUris.join(", ")}`)
-    }
+    klibDefinition(encodingDefinitions, "Encoding")
 
     const runeLabels = await waitForCompletion(
-        positionAfter(projectionDocumentText, "Rune(value)."),
+        positionAfter(interopDocumentText, "Rune(value)."),
         "Value",
-        projectionUri,
+        interopUri,
     )
     for (const expected of ["ToString", "Value"]) {
         if (!runeLabels.includes(expected)) {
@@ -430,17 +420,17 @@ try {
         }
     }
     const utf8EncodingLabels = await waitForCompletion(
-        positionAfter(projectionDocumentText, "UTF8Encoding()."),
+        positionAfter(interopDocumentText, "UTF8Encoding()."),
         "WebName",
-        projectionUri,
+        interopUri,
     )
     if (!utf8EncodingLabels.includes("WebName")) {
         throw new Error("UTF8Encoding completion did not inherit Encoding.WebName")
     }
     const enumLabels = await waitForCompletion(
-        positionAfter(projectionDocumentText, "day == DayOfWeek."),
+        positionAfter(interopDocumentText, "day == DayOfWeek."),
         "Saturday",
-        projectionUri,
+        interopUri,
     )
     for (const expected of ["Saturday", "Sunday", "Monday"]) {
         if (!enumLabels.includes(expected)) {
@@ -448,117 +438,135 @@ try {
         }
     }
     const genericHover = await request("textDocument/hover", {
-        textDocument: { uri: projectionUri },
-        position: positionAfter(projectionDocumentText, "builder.AppendJ"),
+        textDocument: { uri: interopUri },
+        position: positionAfter(interopDocumentText, "builder.AppendJ"),
     })
     const renderedGenericHover = hoverText(genericHover)
     if (!renderedGenericHover.includes("<T") || !renderedGenericHover.includes("IEnumerable<T")) {
         throw new Error(`AppendJoin hover lost its generic signature: ${renderedGenericHover}`)
     }
     const interfaceDefinitions = await request("textDocument/definition", {
-        textDocument: { uri: projectionUri },
-        position: positionAfter(projectionDocumentText, "System.IClone"),
+        textDocument: { uri: interopUri },
+        position: positionAfter(interopDocumentText, "System.IClone"),
     })
-    const interfaceLocations = Array.isArray(interfaceDefinitions)
-        ? interfaceDefinitions
-        : interfaceDefinitions ? [interfaceDefinitions] : []
-    const interfaceDefinitionUris = interfaceLocations.map(location => location.targetUri ?? location.uri)
-    if (!interfaceDefinitionUris.some(uri => uri?.includes("dotkt-klib-java-stubs.jar"))) {
-        throw new Error(`ICloneable definition did not navigate to the Java stub: ${interfaceDefinitionUris.join(", ")}`)
-    }
+    klibDefinition(interfaceDefinitions, "ICloneable")
 
-    if (metadataEnabled) {
-        const constructorErrors = await errorDiagnostics(constructorUri)
-        if (constructorErrors.length !== 0) {
-            throw new Error(`Secondary constructor diagnostics: ${JSON.stringify(constructorErrors)}`)
-        }
-        console.log("Kotlin LSP secondary constructors: overloads, default/named arguments, no primary, generic inference")
-        const receiverErrors = await errorDiagnostics(receiverUri)
-        if (receiverErrors.length !== 0) {
-            throw new Error(`Receiver lambda diagnostics: ${JSON.stringify(receiverErrors)}`)
-        }
-        for (const needle of [
-            'configure = { Font',
-            'configure = { this.Font',
-            'ordinary { it.Font',
-            'nested(listOf({ Font',
-            'nullable { Font',
-        ]) {
-            const completion = await request("textDocument/completion", {
-                textDocument: { uri: receiverUri },
-                position: positionAfter(receiverDocumentText, needle),
-                context: { triggerKind: 1 },
-            })
-            if (!completionLabels(completion).includes("FontSize")) {
-                throw new Error(`Lambda completion did not resolve FontSize at ${needle}; labels=${completionLabels(completion).slice(0, 20).join(", ")}; diagnostics=${JSON.stringify(receiverDiagnostics)}`)
-            }
-        }
-        const receiverScope = completionLabels(await request("textDocument/completion", {
+    const interopErrors = await errorDiagnostics(interopUri)
+    if (interopErrors.length !== 0) {
+        throw new Error(`CLR interop diagnostics: ${JSON.stringify(interopErrors)}`)
+    }
+    const constructorErrors = await errorDiagnostics(constructorUri)
+    if (constructorErrors.length !== 0) {
+        throw new Error(`Secondary constructor diagnostics: ${JSON.stringify(constructorErrors)}`)
+    }
+    console.log("Kotlin LSP secondary constructors: overloads, default/named arguments, no primary, generic inference")
+    const receiverErrors = await errorDiagnostics(receiverUri)
+    if (receiverErrors.length !== 0) {
+        throw new Error(`Receiver lambda diagnostics: ${JSON.stringify(receiverErrors)}`)
+    }
+    for (const needle of [
+        'configure = { Font',
+        'configure = { this.Font',
+        'ordinary { it.Font',
+        'nested(listOf({ Font',
+        'nullable { Font',
+    ]) {
+        const completion = await request("textDocument/completion", {
             textDocument: { uri: receiverUri },
-            position: positionAfter(receiverDocumentText, 'configure = { '),
+            position: positionAfter(receiverDocumentText, needle),
             context: { triggerKind: 1 },
-        }))
-        if (receiverScope.includes("it")) {
-            throw new Error("A receiver-only lambda incorrectly introduced an implicit it parameter")
-        }
-        console.log("Kotlin LSP receiver lambda: implicit receiver, this, ordinary it, nested and nullable receivers; callback invocation and Task.Delay(Int)")
-
-        const suspendErrors = await errorDiagnostics(suspendUri)
-        if (suspendErrors.length !== 0) {
-            throw new Error(`Suspend lambda diagnostics: ${JSON.stringify(suspendErrors)}`)
-        }
-        for (const [needle, expected] of [
-            ['flow { emi', 'emit'],
-            ['withContext { delay(3L); mar', 'marker'],
-            ['nullableSuspend { delay(6L); mar', 'marker'],
-        ]) {
-            const completion = await request("textDocument/completion", {
-                textDocument: { uri: suspendUri },
-                position: positionAfter(suspendDocumentText, needle),
-                context: { triggerKind: 1 },
-            })
-            if (!completionLabels(completion).includes(expected)) {
-                throw new Error(`Suspend lambda completion did not resolve ${expected} at ${needle}`)
-            }
-        }
-        const inferredHover = hoverText(await request("textDocument/hover", {
-            textDocument: { uri: suspendUri },
-            position: positionAfter(suspendDocumentText, 'val typed: Int = infer'),
-        }))
-        if (!/inferred:\s*Int\b/.test(inferredHover)) {
-            throw new Error(`withContext did not infer Int: ${inferredHover}`)
-        }
-        // A normal callback must still reject suspend calls. This prevents a "fix" that simply
-        // grants coroutine context to every lambda or suppresses the diagnostic altogether.
-        notify("textDocument/didChange", {
-            textDocument: { uri: suspendUri, version: 2 },
-            contentChanges: [{ text: suspendDocumentText +
-                '\nfun notSuspendProbe() { receiverfixture.ordinary { delay(7L) } }\n' }],
         })
-        const negativeErrors = await errorDiagnostics(suspendUri)
-        if (negativeErrors.length !== 1 || negativeErrors[0].code !== "ILLEGAL_SUSPEND_FUNCTION_CALL") {
-            throw new Error(`Ordinary callback did not reject a suspend call: ${JSON.stringify(negativeErrors)}`)
+        if (!completionLabels(completion).includes("FontSize")) {
+            throw new Error(`Lambda completion did not resolve FontSize at ${needle}; labels=${completionLabels(completion).slice(0, 20).join(", ")}; diagnostics=${JSON.stringify(receiverDiagnostics)}`)
         }
-        notify("textDocument/didChange", {
-            textDocument: { uri: suspendUri, version: 3 },
-            contentChanges: [{ text: suspendDocumentText }],
-        })
-        console.log("Kotlin LSP suspend lambdas: flow/emit, launch/delay, withContext inference, plain/nested/nullable callbacks, no error diagnostics")
-        console.log("Kotlin LSP negative control: ordinary callback still reports ILLEGAL_SUSPEND_FUNCTION_CALL")
     }
+    const receiverScope = completionLabels(await request("textDocument/completion", {
+        textDocument: { uri: receiverUri },
+        position: positionAfter(receiverDocumentText, 'configure = { '),
+        context: { triggerKind: 1 },
+    }))
+    if (receiverScope.includes("it")) {
+        throw new Error("A receiver-only lambda incorrectly introduced an implicit it parameter")
+    }
+    console.log("Kotlin LSP receiver lambda: implicit receiver, this, ordinary it, nested and nullable receivers; callback invocation and Task.Delay(Int)")
 
-    console.log("Kotlin LSP DotKt overlay completion: ClrEvent, ClrRef, EventSubscription, Span, StackBuffer, byref, clrEvent, stackBuffer")
+    const suspendErrors = await errorDiagnostics(suspendUri)
+    if (suspendErrors.length !== 0) {
+        throw new Error(`Suspend lambda diagnostics: ${JSON.stringify(suspendErrors)}`)
+    }
+    for (const [needle, expected] of [
+        ['flow { emi', 'emit'],
+        ['withContext { delay(3L); mar', 'marker'],
+        ['nullableSuspend { delay(6L); mar', 'marker'],
+    ]) {
+        const completion = await request("textDocument/completion", {
+            textDocument: { uri: suspendUri },
+            position: positionAfter(suspendDocumentText, needle),
+            context: { triggerKind: 1 },
+        })
+        if (!completionLabels(completion).includes(expected)) {
+            throw new Error(`Suspend lambda completion did not resolve ${expected} at ${needle}`)
+        }
+    }
+    const inferredHover = hoverText(await request("textDocument/hover", {
+        textDocument: { uri: suspendUri },
+        position: positionAfter(suspendDocumentText, 'val typed: Int = infer'),
+    }))
+    if (!/inferred:\s*Int\b/.test(inferredHover)) {
+        throw new Error(`withContext did not infer Int: ${inferredHover}`)
+    }
+    // A normal callback must still reject suspend calls. This prevents a "fix" that simply
+    // grants coroutine context to every lambda or suppresses the diagnostic altogether.
+    notify("textDocument/didChange", {
+        textDocument: { uri: suspendUri, version: 2 },
+        contentChanges: [{ text: suspendDocumentText +
+            '\nfun notSuspendProbe() { receiverfixture.ordinary { delay(7L) } }\n' }],
+    })
+    const negativeErrors = await waitForErrors(suspendUri, errors =>
+        errors.some(error => error.code === "ILLEGAL_SUSPEND_FUNCTION_CALL"))
+    if (negativeErrors.length !== 1 || negativeErrors[0].code !== "ILLEGAL_SUSPEND_FUNCTION_CALL") {
+        throw new Error(`Ordinary callback did not reject a suspend call: ${JSON.stringify(negativeErrors)}`)
+    }
+    notify("textDocument/didChange", {
+        textDocument: { uri: suspendUri, version: 3 },
+        contentChanges: [{ text: suspendDocumentText }],
+    })
+    console.log("Kotlin LSP suspend lambdas: flow/emit, launch/delay, withContext inference, plain/nested/nullable callbacks, no error diagnostics")
+    console.log("Kotlin LSP negative control: ordinary callback still reports ILLEGAL_SUSPEND_FUNCTION_CALL")
+
+    notify("textDocument/didChange", {
+        textDocument: { uri: interopUri, version: 2 },
+        contentChanges: [{ text: interopDocumentText + [
+            "",
+            "fun jsOnly() = kotlin.js.Date(0)",
+            "fun jvmOnly() = java.time.Instant.EPOCH",
+            "fun unsupported(value: dynamic) = value.absentMember()",
+        ].join("\n") + "\n" }],
+    })
+    const expectedErrors = new Map([
+        [1, "UNRESOLVED_REFERENCE"],
+        [2, "UNRESOLVED_REFERENCE"],
+        [3, "UNSUPPORTED"],
+    ])
+    const lastLine = interopDocumentText.split("\n").length - 1
+    const rejectsPlatformApis = errors => [...expectedErrors].every(([offset, code]) =>
+        errors.some(error => error.range.start.line === lastLine + offset && error.code === code))
+    const platformErrors = await waitForErrors(interopUri, rejectsPlatformApis)
+    if (!rejectsPlatformApis(platformErrors)) {
+        throw new Error(`Common model accepted a JVM/JS API or JS dynamic type: ${JSON.stringify(platformErrors)}`)
+    }
+    console.log("Kotlin LSP platform controls: rejects JS Date, JVM Instant and dynamic")
+
+    console.log("Kotlin LSP DotKt standard library completion: ClrEvent, ClrRef, EventSubscription, Span, StackBuffer, byref, clrEvent, stackBuffer")
     console.log("Kotlin LSP import completion: StringBuilder")
     console.log("Kotlin LSP member completion: Append, Length, ToString")
     console.log("Kotlin LSP multi-class completion: Encoding.GetEncoding, Encoding.UTF8, Rune.ToString, Rune.Value")
-    console.log("Kotlin LSP Java inheritance completion: UTF8Encoding.WebName")
+    console.log("Kotlin LSP CLR inheritance completion: UTF8Encoding.WebName")
     console.log("Kotlin LSP CLR enum completion: DayOfWeek.Monday, DayOfWeek.Saturday, DayOfWeek.Sunday")
-    console.log("Kotlin LSP Java generic hover: AppendJoin<T>(..., IEnumerable<T>)")
-    console.log("Kotlin LSP Java interface definition: System.ICloneable")
-    console.log("Kotlin LSP definition: dotkt-klib-java-stubs.jar!/System/Text/StringBuilder.class")
-    console.log(metadataEnabled
-        ? "Kotlin LSP metadata hover: ToString(): String (declared, not approximated)"
-        : "Kotlin LSP Java-platform hover upper bound: ToString(): String?")
+    console.log("Kotlin LSP CLR generic hover: AppendJoin<T>(..., IEnumerable<T>)")
+    console.log("Kotlin LSP CLR interface definition: System.ICloneable")
+    console.log(`Kotlin LSP definition and decompilation: ${builderDefinition}`)
+    console.log("Kotlin LSP metadata hover: ToString(): String")
 
     const elapsed = (Date.now() - startedAt) / 1000
     console.log(

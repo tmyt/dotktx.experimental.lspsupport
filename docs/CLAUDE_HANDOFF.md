@@ -1,5 +1,7 @@
 # DotKtX.Experimental.LspSupport 引継ぎ
 
+> この文書は JVM 投影を使っていた旧実装の記録です。0.9.12 以降の構成は [README](../README.md) を参照してください。
+
 パッケージ: LspSupport 0.9.11（コンパイラとは独立した採番）
 対象: DotKt 0.9.31 / Kotlin 2.4.21
 最終更新: 2026-11-22（SDK 0.9.31 対応）

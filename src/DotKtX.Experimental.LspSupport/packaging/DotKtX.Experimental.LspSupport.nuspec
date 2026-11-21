@@ -6,9 +6,9 @@
     <authors>DotKtX</authors>
     <license type="expression">Apache-2.0</license>
     <readme>README.md</readme>
-    <projectUrl>https://github.com/tmyt/dotktx-experimental-lspsupport</projectUrl>
-    <repository type="git" url="https://github.com/tmyt/dotktx-experimental-lspsupport.git" />
-    <description>Experimental JetBrains Kotlin LSP workspace projection for DotKt projects. Projects the CLR reference KLIBs into a single analysis-only JAR whose classfiles carry the same kotlin.Metadata a compiled Kotlin library would, so the editor reads the CLR API as declared. The Kotlin standard library, including kotlin.clr, is projected from DotKt's own CLR standard library KLIB, so no JVM-only stdlib API reaches completion. Targets DotKt $dotKtVersion$.</description>
+    <projectUrl>https://github.com/tmyt/dotktx.experimental.lspsupport</projectUrl>
+    <repository type="git" url="https://github.com/tmyt/dotktx.experimental.lspsupport.git" />
+    <description>Experimental JetBrains Kotlin LSP workspace generation for DotKt projects. Registers the CLR reference KLIBs and the DotKt standard library directly with Kotlin LSP 271.2085.0 and later. Targets DotKt $dotKtVersion$.</description>
     <tags>dotkt kotlin clr lsp vscode experimental</tags>
   </metadata>
   <files>
@@ -17,6 +17,8 @@
     <file src="../../../NOTICE.txt" target="NOTICE.txt" />
     <file src="$versionFile$" target="build/dotkt-version.txt" />
     <file src="build/**" target="build" />
-    <file src="$toolOutput$**" target="tools/net10.0/any" />
+    <file src="$toolOutput$DotKtX.Experimental.LspSupport.dll" target="tools/net10.0/any" />
+    <file src="$toolOutput$DotKtX.Experimental.LspSupport.deps.json" target="tools/net10.0/any" />
+    <file src="$toolOutput$DotKtX.Experimental.LspSupport.runtimeconfig.json" target="tools/net10.0/any" />
   </files>
 </package>

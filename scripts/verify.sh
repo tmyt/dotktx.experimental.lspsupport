@@ -5,13 +5,19 @@ repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$repo_dir"
 verification_dir="$repo_dir/artifacts/verification"
 mkdir -p "$verification_dir"
-if ! bash "$repo_dir/scripts/pack.sh" "$@" >"$verification_dir/pack.log" 2>&1; then
-  cat "$verification_dir/pack.log"
-  exit 1
-fi
+
+run_logged() {
+  local log="$1"
+  shift
+  if ! "$@" >"$log" 2>&1; then
+    cat "$log" >&2
+    return 1
+  fi
+}
+
+run_logged "$verification_dir/pack.log" bash "$repo_dir/scripts/pack.sh" "$@"
 cat "$verification_dir/pack.log"
 
-# Resolve effective paths and version using the same MSBuild properties as the build.
 properties="$(dotnet msbuild "$repo_dir/src/DotKtX.Experimental.LspSupport/DotKtX.Experimental.LspSupport.csproj" \
   -nologo -p:Configuration=Release "$@" -getProperty:TargetDir,PackageVersion,PackageOutputPath,NuGetPackageRoot)"
 property() {
@@ -21,255 +27,134 @@ package_version="$(property PackageVersion)"
 tool_out="$(property TargetDir)"
 package_out="$(property PackageOutputPath)"
 package_cache="$(property NuGetPackageRoot)"
-
-# Only the Kotlin core classifiers still come from the JVM distribution; nothing else may ship.
-test -f "$tool_out/kotlin-builtins.jar"
-test ! -f "$tool_out/kotlin-stdlib.jar"
-test ! -f "$tool_out/dotkt-lsp-overlay.jar"
-for entry in \
-  kotlin/kotlin.kotlin_builtins \
-  kotlin/collections/collections.kotlin_builtins \
-  kotlin/ranges/ranges.kotlin_builtins \
-  kotlin/reflect/reflect.kotlin_builtins; do
-  jar tf "$tool_out/kotlin-builtins.jar" | grep -qx "$entry"
-done
-jar tf "$tool_out/kotlin-builtins.jar" | grep -Fxq 'kotlin/Unit.class'
-jar tf "$tool_out/kotlin-builtins.jar" | grep -Fxq 'kotlin/Function.class'
-if jar tf "$tool_out/kotlin-builtins.jar" | grep '\.class$' | grep -Evq '^kotlin/(Unit|Function)\.class$'; then
-  echo "Only Unit and Function are allowed ABI classes in the builtins archive" >&2
-  exit 1
-fi
+tool="$tool_out/DotKtX.Experimental.LspSupport.dll"
 
 nupkg="$package_out/DotKtX.Experimental.LspSupport.$package_version.nupkg"
-unzip -Z1 "$nupkg" | grep -qx 'tools/net10.0/any/kotlin-builtins.jar'
-if unzip -Z1 "$nupkg" | grep -Fxq 'tools/net10.0/any/kotlin-stdlib.jar'; then
-  echo "The full JVM standard library must not ship" >&2
+entries="$(unzip -Z1 "$nupkg")"
+for entry in LICENSE.txt NOTICE.txt build/dotkt-version.txt \
+  build/DotKtX.Experimental.LspSupport.targets \
+  tools/net10.0/any/DotKtX.Experimental.LspSupport.dll \
+  tools/net10.0/any/DotKtX.Experimental.LspSupport.deps.json \
+  tools/net10.0/any/DotKtX.Experimental.LspSupport.runtimeconfig.json; do
+  grep -Fxq "$entry" <<<"$entries"
+done
+if grep -Eq '\.jar$|Google\.Protobuf\.dll$' <<<"$entries"; then
+  echo "The package contains a JVM archive or a projection dependency" >&2
   exit 1
 fi
-unzip -Z1 "$nupkg" | grep -Fxq 'tools/net10.0/any/DotKtX.Experimental.LspSupport.dll'
-unzip -Z1 "$nupkg" | grep -Fxq 'LICENSE.txt'
-unzip -Z1 "$nupkg" | grep -Fxq 'NOTICE.txt'
 unzip -p "$nupkg" DotKtX.Experimental.LspSupport.nuspec >"$verification_dir/package.nuspec"
 node -e '
   const xml = require("fs").readFileSync(process.argv[1], "utf8")
-  if (!/<id>DotKtX\.Experimental\.LspSupport<\/id>/.test(xml)) process.exit(1)
-  if (/<dependency\s/.test(xml)) process.exit(1)
+  if (!/<id>DotKtX\.Experimental\.LspSupport<\/id>/.test(xml) || /<dependency\s/.test(xml)) process.exit(1)
 ' "$verification_dir/package.nuspec"
 
-# NuGet treats one package ID/version as immutable. This repository intentionally rebuilds the same
-# experimental version while developing, so remove its isolated cached extraction before restore;
-# otherwise a fresh nupkg can be silently tested through yesterday's targets and tools.
+# Restore the freshly packed local version into this repository's test package cache.
 rm -rf "$package_cache/dotktx.experimental.lspsupport/$package_version"
-rm -rf "$repo_dir/tests/Smoke/.dotkt" "$repo_dir/tests/Smoke/workspace.json"
-if ! dotnet build "$repo_dir/tests/Smoke/Smoke.ktproj" -c Release --force "$@" >"$verification_dir/Smoke.build.log" 2>&1; then
-  cat "$verification_dir/Smoke.build.log"
-  exit 1
-fi
-cat "$verification_dir/Smoke.build.log"
-smoke_out="$(dotnet msbuild "$repo_dir/tests/Smoke/Smoke.ktproj" -nologo -p:Configuration=Release "$@" -getProperty:TargetPath)"
+smoke_dir="$repo_dir/tests/Smoke"
+smoke="$smoke_dir/Smoke.ktproj"
+model="$smoke_dir/.dotkt/lsp"
+workspace="$smoke_dir/workspace.json"
+shim="$model/compatibility/java/io/Serializable.kt"
+run_logged "$verification_dir/Smoke.build.log" dotnet build "$smoke" -c Release --force "$@"
+smoke_out="$(dotnet msbuild "$smoke" -nologo -p:Configuration=Release "$@" -getProperty:TargetPath)"
+intermediate="$(dotnet msbuild "$smoke" -nologo -p:Configuration=Release "$@" -getProperty:IntermediateOutputPath)"
+if [[ "$intermediate" != /* ]]; then intermediate="$smoke_dir/$intermediate"; fi
 dotnet "$smoke_out" >"$verification_dir/Smoke.actual.txt"
-diff -u "$repo_dir/tests/Smoke/expected.txt" "$verification_dir/Smoke.actual.txt"
-# The tool's dependency manifest must use the normalized assembly name.
-node -e '
-  const libraries = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).libraries
-  if (!Object.keys(libraries).some(k => k.startsWith("DotKtX.Experimental.LspSupport/"))) process.exit(1)
-' "$tool_out/DotKtX.Experimental.LspSupport.deps.json"
+diff -u "$smoke_dir/expected.txt" "$verification_dir/Smoke.actual.txt"
 
-test -f "$repo_dir/tests/Smoke/workspace.json"
-test -f "$repo_dir/tests/Smoke/.dotkt/lsp/.stamp"
-java_stub_jar="$repo_dir/tests/Smoke/.dotkt/lsp/libraries/dotkt-klib-java-stubs.jar"
-test -f "$java_stub_jar"
-for entry in \
-  'System/DayOfWeek.class' \
-  'System/ICloneable.class' \
-  'System/Text/Encoding.class' \
-  'System/Text/Rune.class' \
-  'System/Text/StringBuilder.class' \
-  'System/Text/StringBuilder$AppendInterpolatedStringHandler.class' \
-  'System/Text/StringBuilder$ChunkEnumerator.class' \
-  'System/Text/UTF8Encoding.class'; do
-  jar tf "$java_stub_jar" | grep -Fqx "$entry"
-done
-# DotKt emits CLR statics as members of their own type instead of duplicating them onto a
-# synthetic companion. Kotlin's own standard library still has real companions (`UInt.Companion`),
-# so only a companion on a CLR type indicates the old duplication has come back.
-if jar tf "$java_stub_jar" | grep 'Companion' | grep -qv '^kotlin/'; then
-  echo "A companion class was projected for a CLR type; current DotKt should not declare one" >&2
-  jar tf "$java_stub_jar" | grep 'Companion' | grep -v '^kotlin/' | head -5 >&2
-  exit 1
-fi
-# Every referenced declaration now has a JVM shape, so the Kotlin source fallback must be empty.
-if [ -d "$repo_dir/tests/Smoke/.dotkt/lsp/stubs" ] && \
-   [ -n "$(find "$repo_dir/tests/Smoke/.dotkt/lsp/stubs" -name '*.kt' -print -quit)" ]; then
-  echo "Declarations were left in the Kotlin source projection:" >&2
-  find "$repo_dir/tests/Smoke/.dotkt/lsp/stubs" -name '*.kt' | head -5 >&2
-  exit 1
-fi
-# A CLR attribute is only usable if it arrives as a real JVM annotation.
-javap -classpath "$java_stub_jar" System.ObsoleteAttribute | \
-  grep -q '^public interface System.ObsoleteAttribute extends java.lang.annotation.Annotation {'
-javap -classpath "$java_stub_jar" System.ObsoleteAttribute | grep -q 'public abstract java.lang.String Message();'
-javap -classpath "$java_stub_jar" -s System.Text.StringBuilder | grep -q 'public native java.lang.String ToString();'
-javap -classpath "$java_stub_jar" -s System.Text.StringBuilder | grep -q 'descriptor: ()Ljava/lang/String;'
-javap -classpath "$java_stub_jar" -p System.Text.StringBuilder | \
-  grep -q 'public native <T> System.Text.StringBuilder AppendJoin(char, System.Collections.Generic.IEnumerable<T>);'
-javap -classpath "$java_stub_jar" System.ICloneable | grep -q '^public interface System.ICloneable {'
-javap -classpath "$java_stub_jar" -s System.Text.Encoding | grep -q 'public static final System.Text.Encoding UTF8;'
-javap -classpath "$java_stub_jar" -s System.Text.Encoding | grep -q 'public static native System.Text.Encoding GetEncoding(int);'
-javap -classpath "$java_stub_jar" -s System.Text.Rune | grep -q 'public static final System.Text.Rune ReplacementChar;'
-javap -classpath "$java_stub_jar" System.Text.Encoding | grep -q '^public abstract class System.Text.Encoding implements System.ICloneable {'
-javap -classpath "$java_stub_jar" System.Text.UTF8Encoding | grep -q '^public class System.Text.UTF8Encoding extends System.Text.Encoding {'
-javap -classpath "$java_stub_jar" -s 'System.Text.StringBuilder$ChunkEnumerator' | \
-  grep -q 'descriptor: ()LSystem/Text/StringBuilder\$ChunkEnumerator;'
-# Supertype closure: `Encoding : ICloneable` only resolves because every reachable supertype is emitted,
-# no longer because a human happened to list ICloneable in a hard-coded array.
-jar tf "$java_stub_jar" | grep -Fqx 'System/IComparable1.class'
-jar tf "$java_stub_jar" | grep -Fqx 'System/Runtime/Serialization/ISerializable.class'
-# Class-level generics, resolved from the owner's own type-parameter context.
-javap -classpath "$java_stub_jar" System.IComparable1 | grep -q '^public interface System.IComparable1<T> {'
-javap -classpath "$java_stub_jar" -v System.IComparable1 | grep -q 'Signature:.*<T:Ljava/lang/Object;>Ljava/lang/Object;'
-javap -classpath "$java_stub_jar" System.Text.Rune | \
-  grep -q 'implements .*System.IComparable1<System.Text.Rune>'
-# Field signatures: without one this reads as a raw `System.ReadOnlySpan`.
-javap -classpath "$java_stub_jar" System.Text.Encoding | \
-  grep -q 'public final System.ReadOnlySpan<kotlin.UByte> Preamble;'
-# A JVM generic signature admits only reference types as type arguments.
-javap -classpath "$java_stub_jar" System.ISpanFormattable | grep -q 'kotlin.clr.Span<java.lang.Character>'
-# CLR static abstract interface members must not become an unloadable `static abstract` method.
-javap -classpath "$java_stub_jar" -v System.IUtf8SpanParsable | \
-  grep -A3 'public static .* Parse(' | grep -q 'ACC_PUBLIC, ACC_STATIC$'
-javap -classpath "$java_stub_jar" -v System.IUtf8SpanParsable | grep -q 'stack=1, locals=2, args_size=2'
-# Nested binary names are declared, not just spelled, so the editor shows `StringBuilder.ChunkEnumerator`.
-javap -classpath "$java_stub_jar" -v System.Text.StringBuilder | \
-  grep -q 'ChunkEnumerator=class System/Text/StringBuilder\$ChunkEnumerator of class System/Text/StringBuilder'
-# A CLR enum has to arrive as a real JVM enum: without the `Enum<Self>` signature Kotlin sees a plain
-# class extending a raw java.lang.Enum and stops treating the constants as enum entries.
-javap -classpath "$java_stub_jar" -v System.DayOfWeek | grep -q 'ACC_PUBLIC, ACC_FINAL, ACC_SUPER, ACC_ENUM'
-javap -classpath "$java_stub_jar" -v System.DayOfWeek | grep -q 'Signature:.*Ljava/lang/Enum<LSystem/DayOfWeek;>;'
-javap -classpath "$java_stub_jar" -v System.DayOfWeek | grep -q 'ACC_PUBLIC, ACC_STATIC, ACC_FINAL, ACC_ENUM'
-javap -classpath "$java_stub_jar" System.DayOfWeek | grep -q 'public static final System.DayOfWeek Monday;'
-# No projected class may extend itself; a short-name supertype must resolve through the outer type.
-javap -classpath "$java_stub_jar" System.Text.UTF8Encoding | grep -qv 'extends System.Text.UTF8Encoding'
-# Each projected class carries the Kotlin declaration it came from, so the editor reads the CLR API
-# rather than a Java-shaped approximation of it.
-javap -classpath "$java_stub_jar" -v System.Text.StringBuilder | grep -q 'kotlin.Metadata('
-javap -classpath "$java_stub_jar" -v System.Text.StringBuilder | grep -q 'k=1'
-report="$repo_dir/tests/Smoke/.dotkt/lsp/projection-report.md"
-test -f "$report"
-rg -q '^- klib\.libraries: ' "$report"
-# A CLR attribute has constructor overloads that a Kotlin annotation class cannot express.
-rg -q '^- annotation\.constructor-overload-dropped: ' "$report"
-# The projection is declaration-for-declaration with the KLIBs. Constructors are the one exception,
-# and its size has to equal the annotation overloads that were reported as unrepresentable.
-node -e '
-  const fs = require("fs")
-  const report = fs.readFileSync(process.argv[1], "utf8")
-  const rows = [...report.matchAll(/^\| ([a-z -]+) \| (\d+) \| (\d+) \| ([+-]?\d+) \|$/gm)]
-  if (rows.length < 7) { console.error("declaration accounting table is missing"); process.exit(1) }
-  const overloads = Number(/^- annotation\.constructor-overload-dropped: (\d+)$/m.exec(report)?.[1] ?? -1)
-  let failed = false
-  for (const [, kind, , , delta] of rows) {
-    const allowed = kind.trim() === "constructor" ? -overloads : 0
-    if (Number(delta) !== allowed) {
-      console.error(`${kind.trim()}: delta ${delta}, expected ${allowed}`)
-      failed = true
-    }
-  }
-  if (failed) process.exit(1)
-' "$report"
-# Platform types only survive through metadata; the KLIB records tens of thousands of them.
-rg -q '^- metadata\.type\.flexible: [1-9]' "$report"
-rg -q '^- metadata\.class: [1-9]' "$report"
-# Receiver lambdas need a type-use annotation, not merely Function1<T, Unit>. Count both sides,
-# then let Kotlin itself type-check this/implicit receivers and ordinary it against the emitted JAR.
-rg -q '^- klib\.typeref\.extension-function: [1-9]' "$report"
-rg -q '^- metadata\.type\.extension-function: [1-9]' "$report"
-rg -q '^- klib\.typeref\.suspend-function: [1-9]' "$report"
-rg -q '^- metadata\.type\.suspend-function: [1-9]' "$report"
-dotkt_version="$(sed -n 's:.*<DotKtVersion>\(.*\)</DotKtVersion>.*:\1:p' "$repo_dir/Directory.Build.props")"
-compiler_lib="$package_cache/dotkt.toolchain/$dotkt_version/tools/kotc/lib"
-# Use exactly the shipped analysis classpath: the full JVM stdlib would mask missing ABI classes.
-java -cp "$compiler_lib/*" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler \
-  -no-stdlib -classpath "$tool_out/kotlin-builtins.jar:$java_stub_jar" \
-  -Xcompanion-blocks-and-extensions \
-  -d "$verification_dir/receiver-consumer" \
-  "$repo_dir/tests/Smoke/ReceiverLambda.kt" "$repo_dir/tests/Smoke/SuspendLambda.kt" \
-  "$repo_dir/tests/Smoke/SecondaryConstructors.kt"
-# Overloads that erase to one JVM descriptor are kept by mangling the JVM name, not by dropping them.
-rg -q '^- member\.mangled\.method: [1-9]' "$report"
-# Top-level CLR declarations have no owning class, so they only exist for the analyzer as file facades
-# named by the module mapping. Both halves have to be in the archive.
-jar tf "$java_stub_jar" | grep -Fqx 'META-INF/dotkt_clr.kotlin_module'
-rg -q '^- java\.class\.facade: [1-9]' "$report"
-rg -q '^- java\.facade\.callable: [1-9]' "$report"
-javap -classpath "$java_stub_jar" -v System.Linq.System_Linq_ParallelKt | grep -q 'k=2'
-javap -classpath "$java_stub_jar" System.Linq.System_Linq_ParallelKt | grep -q 'public static native .* AsParallel('
-# A C# extension method is callable as a static of its class and as an extension; both forms are
-# declared and both are emitted, in different scopes. Counted so the shape stays visible.
-rg -q '^- extension-method\.both-call-forms: [1-9]' "$report"
-if rg -q '^## upstream gaps$' "$report"; then
-  echo "DotKt $dotkt_version left an upstream KLIB gap:" >&2
-  sed -n '/^## upstream gaps$/,/^## /p' "$report" >&2
-  exit 1
-fi
-if rg -q '^- member\.dropped\.' "$report"; then
-  echo "The projection dropped members that the metadata representation can carry:" >&2
-  rg '^- member\.dropped\.' "$report" >&2
-  exit 1
-fi
-rg -q 'kotlin-builtins\.jar' "$repo_dir/tests/Smoke/workspace.json"
-rg -q 'dotkt-klib-java-stubs\.jar' "$repo_dir/tests/Smoke/workspace.json"
-if rg -q 'kotlin-stdlib\.jar|dotkt-lsp-overlay\.jar' "$repo_dir/tests/Smoke/workspace.json"; then
-  echo "The workspace still references the JVM stdlib approximation" >&2
-  exit 1
-fi
-# kotlin.clr now comes from DotKt's own standard library rather than a hand-written overlay.
-javap -classpath "$java_stub_jar" kotlin.clr.ClrRef > /dev/null
-javap -classpath "$java_stub_jar" kotlin.clr.EventSubscription > /dev/null
-# The Kotlin compiler stores a declaration's types in a per-class table and refers to them by index.
-# Missing that indirection does not fail: every type silently becomes Any, so it has to be asserted.
-javap -p -classpath "$java_stub_jar" kotlin.text.Regex | grep -q 'public final java.lang.String pattern;'
-javap -p -classpath "$java_stub_jar" kotlin.clr.ClrRef | \
-  grep -q 'public native T getValue(java.lang.Object, kotlin.reflect.KProperty<?>);'
-# The compiler names type variables where dll2klib numbers them; both have to resolve.
-javap -p -classpath "$java_stub_jar" kotlin.clr.kotlin_stdlib_clr_frontendKt | \
-  grep -q 'public static native <T> kotlin.clr.ClrRef<T> byref(T);'
-# An extension property has no backing field and must arrive as accessors.
-javap -p -classpath "$java_stub_jar" kotlin.collections.kotlin_stdlib_clr_frontendKt | \
-  grep -q 'getIndices('
-rg -q '^- member\.extension-property: [1-9]' "$report"
-# A JVM-only stdlib API must not be reachable at all.
-if jar tf "$java_stub_jar" | grep -qE '^kotlin/concurrent/(Threads|Locks|Timers)Kt\.class$'; then
-  echo "A JVM-only stdlib facade reached the projection" >&2
-  exit 1
-fi
-# Parse JSON so this assertion is independent of System.Text.Json's escaping choices.
-node -e '
-  const workspace = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-  const settings = workspace.kotlinSettings?.[0];
-  const compiler = JSON.parse(settings.compilerArguments.slice(1));
-  if (compiler.companionBlocks !== true || compiler.companionBlocksAndExtensions !== true) process.exit(1);
-  const args = settings.additionalArguments ?? "";
-  if (!args.split(/\s+/).includes("-Xcompanion-blocks")) process.exit(1);
-' "$repo_dir/tests/Smoke/workspace.json"
+node - "$workspace" "$intermediate/dotkt-lsp-klibs.rsp" "$shim" <<'JS'
+const assert = require("node:assert/strict")
+const fs = require("node:fs")
+const path = require("node:path")
 
-# The plain-Java fallback is the escape hatch if a metadata bug ever ships, so it has to keep working.
-fallback_out="$verification_dir/no-metadata"
-rm -rf "$fallback_out"
-mkdir -p "$fallback_out/project"
-dotnet "$tool_out/DotKtX.Experimental.LspSupport.dll" \
-  generate --project "$fallback_out/project" --name fallback --output "$fallback_out/model" \
-  --sources "$repo_dir/artifacts/obj/Smoke/dotkt-lsp-sources.rsp" \
-  --klibs "$repo_dir/artifacts/obj/Smoke/dotkt-lsp-klibs.rsp" \
-  --java-projection 'all;no-metadata' > /dev/null
-fallback_jar="$fallback_out/model/libraries/dotkt-klib-java-stubs.jar"
-rg --no-ignore -q '@kotlin\.ExtensionFunctionType.*receiverfixture\.TextBlock' "$fallback_out/model/stubs"
-rg --no-ignore -q 'block: suspend suspendfixture.CoroutineScope\.\(\) -> T' "$fallback_out/model/stubs"
-rg --no-ignore -q 'block: \(suspend suspendfixture.CoroutineScope\.\(\) -> kotlin.Unit\)\?' "$fallback_out/model/stubs"
-javap -classpath "$fallback_jar" -v System.Text.StringBuilder | grep -qv 'kotlin.Metadata('
-javap -classpath "$fallback_jar" System.Text.StringBuilder | grep -q 'public native java.lang.String ToString();'
-# Without metadata there is nowhere to record a Kotlin name, so the erasure collisions come back.
-rg -q '^- member\.dropped\.erasure-clash\.method: [1-9]' "$fallback_out/model/projection-report.md"
-rm -rf "$fallback_out"
+const [workspaceFile, klibList, shim] = process.argv.slice(2)
+const model = JSON.parse(fs.readFileSync(workspaceFile, "utf8"))
+const [module] = model.modules
+const [library] = model.libraries
+assert.equal(model.modules.length, 1)
+assert.equal(model.libraries.length, 1)
+assert.equal(library.type, null)
+assert.deepEqual(module.dependencies, [
+    { type: "moduleSource" },
+    { type: "library", name: library.name, scope: "compile" },
+])
+const roots = library.roots.map(root => root.path)
+assert.deepEqual(roots, [...new Set(fs.readFileSync(klibList, "utf8").trim().split(/\r?\n/))].sort())
+for (const name of ["kotlin-stdlib-clr-frontend.klib", "System.Runtime.klib", "DotKtX.LspSupport.ReceiverFixture.klib"]) {
+    assert(roots.some(root => path.basename(root) === name), name)
+}
+assert(roots.every(root => path.isAbsolute(root) && fs.existsSync(root) && !root.endsWith(".jar")))
+assert.equal(model.javaSettings, undefined)
+const [settings] = model.kotlinSettings
+assert.equal(settings.module, module.name)
+assert.equal(settings.kind, "source_set_holder")
+assert.equal(settings.isHmppEnabled, true)
+assert.equal(settings.compilerArguments[0], "M")
+const compiler = JSON.parse(settings.compilerArguments.slice(1))
+assert.equal(compiler.companionBlocks, true)
+assert.match(settings.additionalArguments, /(?:^| )-Xcompanion-blocks(?: |$)/)
+assert(module.contentRoots.some(root => root.sourceRoots.some(source =>
+    path.join(source.path, "java", "io", "Serializable.kt") === shim)))
+assert.match(fs.readFileSync(shim, "utf8"), /package java\.io\s+internal interface Serializable/)
+JS
 
-echo "DotKtX.Experimental.LspSupport: package and MSBuild generation verified"
+test ! -e "$model/libraries/dotkt-klib-java-stubs.jar"
+test ! -e "$model/projection-report.md"
+
+mtime() {
+  node -e 'console.log(require("fs").statSync(process.argv[1]).mtimeMs)' "$1"
+}
+stamp_time="$(mtime "$model/.stamp")"
+workspace_time="$(mtime "$workspace")"
+run_logged "$verification_dir/Smoke.incremental.log" dotnet build "$smoke" -c Release "$@"
+test "$(mtime "$model/.stamp")" = "$stamp_time"
+test "$(mtime "$workspace")" = "$workspace_time"
+
+rm "$shim"
+run_logged "$verification_dir/Smoke.repair.log" dotnet build "$smoke" -c Release "$@"
+test -f "$shim"
+test "$(mtime "$workspace")" = "$workspace_time"
+if grep -Fq 'Serializable.kt' "$intermediate/dotkt-kotc.rsp" "$intermediate/dotkt-lsp-sources.rsp"; then
+  echo "The analysis-only compatibility source reached the DotKt compiler or project source list" >&2
+  exit 1
+fi
+
+# Exercise migration and workspace ownership with an independent project directory.
+migration_dir="$(mktemp -d "$verification_dir/migration.XXXXXX")"
+trap 'rm -rf -- "$migration_dir"' EXIT
+legacy="$migration_dir/.dotkt/lsp"
+mkdir -p "$legacy/libraries" "$legacy/stubs"
+touch "$legacy/libraries/dotkt-klib-java-stubs.jar" "$legacy/stubs/Old.kt" "$legacy/projection-report.md"
+printf '%s\n' '{"modules":[{"name":"DotKtx.Experimental.LspSupport:legacy"}]}' >"$migration_dir/workspace.json"
+generate() {
+  dotnet "$tool" generate --project "$migration_dir" --name legacy --output "$legacy" \
+    --sources "$intermediate/dotkt-lsp-sources.rsp" --klibs "$intermediate/dotkt-lsp-klibs.rsp"
+}
+generate
+test -f "$legacy/compatibility/java/io/Serializable.kt"
+test ! -e "$legacy/libraries/dotkt-klib-java-stubs.jar"
+test ! -e "$legacy/stubs/Old.kt"
+test ! -e "$legacy/projection-report.md"
+
+foreign_model='{"modules":[{"name":"custom"}]}'
+printf '%s\n' "$foreign_model" >"$migration_dir/workspace.json"
+if generate >"$verification_dir/foreign-workspace.log" 2>&1; then
+  echo "The generator accepted a foreign workspace" >&2
+  exit 1
+fi
+grep -Fq 'refusing to overwrite' "$verification_dir/foreign-workspace.log"
+dotnet "$tool" clean --project "$migration_dir" --output "$legacy"
+test "$(cat "$migration_dir/workspace.json")" = "$foreign_model"
+test ! -e "$legacy"
+
+run_logged "$verification_dir/Smoke.clean.log" dotnet clean "$smoke" -c Release "$@" -p:DotKtxExperimentalLspSupportEnabled=false
+test ! -e "$workspace"
+test ! -e "$shim"
+test ! -e "$model/.stamp"
+test ! -e "$intermediate/dotkt-lsp-klibs.rsp"
+test ! -e "$intermediate/dotkt-lsp-sources.rsp"
+run_logged "$verification_dir/Smoke.rebuild.log" dotnet build "$smoke" -c Release "$@"
+test -f "$workspace"
+test -f "$shim"
+
+echo "DotKtX.Experimental.LspSupport: package, KLIB workspace, incremental build, migration and cleanup verified"

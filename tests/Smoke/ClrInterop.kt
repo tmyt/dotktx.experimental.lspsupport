@@ -11,8 +11,7 @@ fun utf8WebName(): String = UTF8Encoding().WebName
 
 fun cloneableEncoding(): System.ICloneable = Encoding.UTF8
 
-// A CLR enum reaches the analyzer as a JVM enum, so its constants and equality have to behave exactly
-// as they do for the real DotKt compilation of this same file.
+// CLR enum constants and equality must resolve through the reference KLIB.
 fun isWeekend(day: DayOfWeek): Boolean = day == DayOfWeek.Saturday || day == DayOfWeek.Sunday
 
 fun <T> appendValues(
