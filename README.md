@@ -9,7 +9,7 @@ and go-to-definition.
 
 ## Usage
 
-Use DotKt SDK and Toolchain `0.9.34` and Kotlin LSP `271.2085.0` or newer.
+Use DotKt SDK and Toolchain `0.9.35` and Kotlin LSP `271.2085.0` or newer.
 Kotlin by JetBrains for VS Code bundles that server starting with extension
 `0.0.86`. [Kotlin LSP release notes](https://github.com/Kotlin/kotlin-lsp/releases/tag/kotlin-lsp/v271.2085.0)
 
@@ -19,7 +19,7 @@ Add the package as a private build dependency.
 <ItemGroup>
   <PackageReference
     Include="DotKtX.Experimental.LspSupport"
-    Version="[0.9.17]"
+    Version="[0.9.18]"
     PrivateAssets="all"
     IncludeAssets="build" />
 </ItemGroup>
